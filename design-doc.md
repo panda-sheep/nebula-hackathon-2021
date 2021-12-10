@@ -52,7 +52,7 @@ EdgeA_Outn
 对于每个点，不做 prefix scan 不知道 n 是多少。扫描，或者建索引。
 
 ## 问题3：优化图结构的访问速度
-
+ 
 决大部分的图计算，只需要 edge key 的信息——图结构——以及一两个property（weight）。行式存储格式，SSD 扫描时带有基本无用的 value。
 
 > BTW KV-seperation也是一种提升图结构访问的方式。
@@ -275,14 +275,22 @@ TODO: 需要benchmark下
   7）data ref，写rocksdb edge ref，并修改count
   同时TOSS解锁
 }
+
+  失败处理：TODO  必须保证ref key 在src 和dst两个partition的正确性，data key交给GC
 ```
+#### 删除一条边
+
+![image](https://user-images.githubusercontent.com/50101159/145541433-71994576-3e2b-43b9-9d65-aec20c3000b7.png)
+![image](https://user-images.githubusercontent.com/50101159/145541446-d0a35341-ff81-4192-a16b-965fc5bd8c8d.png)
+
+删除边时只需要操作 Ref_key，data_key交给GC
 
 #### 关于CF Edge 过大分离的问题补充，& 批量插入边
 
 ![image](https://user-images.githubusercontent.com/50101159/145535785-a505fbbd-4b45-48a3-8cd2-723b368c2608.png)
 
 1. 当同一类型的边是按顺序插入时, dst1, dst3, dst5；每插入countN个后，下一个 dst 作为ref的第二行key的一部分。`src+outEdge1+\0`和 `src+outEdge1+dst11`。这样方便dstxx的定位（见后）
-2. 当同一类型的边是乱序插入时，`3*countN`满了之后（超级节点），这个Refkey要发生分裂。批量导入和增量导入可以考虑不同分裂的方式（见后）
+2. 当同一类型的边是乱序插入时，`3*countN`满了之后（超级节点），这个Refkey要发生分裂。批量导入和增量导入可以考虑不同分裂的方式（见后讨论）
 3. 不同类型Edge部分不同
 
 #### 读取一条边或者多条边 （取边结构）
@@ -294,7 +302,65 @@ TODO: 需要benchmark下
 #### 取边结构+边属性
 
 1. rocksdb ref  查看边是否存在，没有的话报错。有的话，得到edgekey
-2. rocksdb data 去获取edgekey对应的属性
+2. rocksdb data 去获取edgekey对应的属性。 使用multiget，而不是prefix，性能更好。
+
+多种边类型操作类似
+
+#### 取点的出度、入度
+
+1. 从rocksdb ref找到对应的key，直接累加。相同类型会更快
+
+#### TODO 删除一个点，以及周围所有的边
+
+Detach DELETE 是一个很重的操作，目前没有好的办法。
+
+一些想法：判断是否是超级节点，然后批量删除边
+
+#### GC
+
+部分写成功，或者标记位删除时，可以用GC来回收
+
+扫描每个data key,检查是否存在对应的ref key.
+
+#### 大批量数据初始化——不实现
+
+Sst ingest。逻辑放在spark里面 （TODO  ）
+
+#### 大批量数据写入——不实现
+
+TODO：也许可以采用类似 rebuild index方式，批量写(metad标记为不可读)，再重建Ref_Key
+
+或者Ref_key不加锁
+
+#### 索引——不实现
+
+TODO：应该改动不大
+
+#### 升级——不实现
+
+TODO：类似rebuild index方案（快照+增量？）。V1代码仍可以读DataKey，V2代码读Ref_Key+DataKey。
+
+标记位检查
+
+# 展示的语法
+
+1. 取出度、或者入度
+2. GO FROM语句
+3. insert 悬挂边失败
+
+# 一些其他的可能性讨论
+
+## VID 变长，内外的 id 解耦
+
+1. 一个图空间的VID定长，但MySQL是每个表PK定长。一个简单的例子，同一个库里面，设备mac和身份证号两张表的pk一定长度不一样，空间浪费严重。
+
+通过ref-key 可以做一层语意隔离，把用户语意的 PK 和系统内部的 ID 分开
+
+![image](https://user-images.githubusercontent.com/50101159/145542622-7521f35a-ecaa-4ad5-96ec-c30403125205.png)
+
+如果记录Len1 Len2这样的offset，可以不要求VID必须是固定长度。
+
+datakey用whole_key_bloom_filter定位。ref_key用内存定位。
 
 
 
