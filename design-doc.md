@@ -4,7 +4,7 @@
 
 问题2： 出度、入度统计值
 
-问题3： 提高图结构的访问速度
+问题3： 优化图结构的访问速度
 
 # 问题有什么价值？
 
@@ -51,11 +51,37 @@ EdgeA_Outn
 ```
 对于每个点，不做 prefix scan 不知道 n 是多少。扫描，或者建索引。
 
-## 问题3：提高图结构的访问速度
+## 问题3：优化图结构的访问速度
 
 决大部分的图计算，只需要 edge key 的信息——图结构——以及一两个property（weight）。行式存储格式，SSD 扫描时带有基本无用的 value。
 
 > BTW KV-seperation也是一种提升图结构访问的方式。
+
+
+## 不解决的问题
+
+- 分布式事务的能力
+
+- TOSS 导致的逻辑边，正向和反向访问的最终一致性
+
+- 并发的隔离性
+
+- 点、边等数据模型: 点是否要有Tag/Lable.
+ 
+- online DDL：DDL 不能实时感知，meta client时延问题。
+
+- graphd, storaged 双进程 rpc 时延大的问题
+
+
+## 其他设计目标
+
+- 平滑升级，不依赖工具升级。
+
+- 不更改通信协议
+
+- 增加语法。
+
+- Change: 悬挂边插入会报错。
 
 # 业界方案参考
 
@@ -82,9 +108,60 @@ JanusGraph 将一个点的ID作为KEY, “<所有属性>,<所有出边>，<所�
 
 ![image](https://user-images.githubusercontent.com/50101159/145526612-e14a110f-b0b0-41bd-abc7-2e26d9cd1d94.png)
 
+点(Label)、边(图结构)、属性是各自独立的文件, Neo4j 自己实现这些硬盘文件的可靠性（以及Raft）
 
+## B-tree
 
+略
+
+## KV-seperation (WiscKey)
+
+略
 
 ## nebula-TOSS 
 
+![image](https://user-images.githubusercontent.com/50101159/145527387-148e0eca-a68f-4b9a-808b-6eda8ebdb9a0.png)
 
+保证EdgeA_Out 和 EdgeA_In的（两个机器上的）**最终一致性**
+
+下文仍使用TOSS的逻辑，但有改动
+
+# 解决方法详述
+
+## 建模方式
+
+### storage 原来的数据格式
+
+![image](https://user-images.githubusercontent.com/50101159/145525464-05e899a2-3ca0-4bd4-8e54-f0bb78ed5bc4.png)
+
+
+### vertex data 
+
+| Key |   Value |
+| -   |  - | 
+| PartitionId  VertexId  TagId | Property values ,   value的开头含有当前的schema信息 |
+| type(1byte NebulaKeyType::kVertex)_PartID(3bytes)_VertexID(8bytes)_TagID(4bytes)   需要vidlen来指定，不足补'\0'  | - |
+
+index 
+
+|  key |   Value |
+| -  | - |
+| type(NebulaKeyType::kIndex)_PartitionId  IndexId   Index binary  nullableBit   VertexId   | - |    
+需要vidlen来指定，不足补'\0'
+
+
+![image](https://user-images.githubusercontent.com/50101159/145528316-47b31ced-a276-4e03-ae97-8e09b7943920.png)
+
+### edge data
+
+| key | value |
+| partId + srcId + edgeType + edgeRank + dstId + version   需要vidlen来指定，不足补'\0' |  Property values |
+|    type(1byte)_PartID(3bytes)_VertexID(8bytes)_EdgeType(4bytes)_Rank(8bytes)_otherVertexId(8bytes)_version(1) | - |
+
+| index | 
+
+| key | value |
+| PartitionId  IndexId  Index binary  nullableBit   SrcVertexId  EdgeRank  DstVertexId | - |
+
+
+## 
