@@ -352,7 +352,7 @@ TODO：类似rebuild index方案（快照+增量？）。V1代码仍可以读Dat
 
 ## VID 变长，内外的 id 解耦
 
-1. 一个图空间的VID定长，但MySQL是每个表PK定长。一个简单的例子，同一个库里面，设备mac和身份证号两张表的pk一定长度不一样，空间浪费严重。
+一个图空间的VID定长，但MySQL是每个表PK定长。一个简单的例子，同一个库里面，设备mac和身份证号两张表的pk一定长度不一样，内存空间浪费严重。
 
 通过ref-key 可以做一层语意隔离，把用户语意的 PK 和系统内部的 ID 分开
 
@@ -361,7 +361,6 @@ TODO：类似rebuild index方案（快照+增量？）。V1代码仍可以读Dat
 如果记录Len1 Len2这样的offset，可以不要求VID必须是固定长度。
 
 datakey用whole_key_bloom_filter定位。ref_key用内存定位。
-
 
 
 
