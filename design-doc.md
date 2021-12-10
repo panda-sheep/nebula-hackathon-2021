@@ -208,7 +208,7 @@ Ref_key 所在Rocksdb 与 Data_key 所在的Rocksdb 实例分开(rocksdb data,  
 内存空间估算（10亿条边为例: 3 拷贝 * 2 反向 * 1G /countN * 每行字节数 ）
 
 | countN | 一行字节 | 集群内存  |
-| - | - |
+| - | - | - |
 | 10  | 96 个字节 | 9.6GB |
 | 50  | 416 | 4.9GB |
 | 100 | 816 | 4.8GB |
@@ -225,10 +225,14 @@ TODO: 需要benchmark下
 
 #### 写入一个 Tag
 
+
+![image](https://user-images.githubusercontent.com/50101159/145535047-caa67b60-81f0-4f8b-9f7b-4294f7892c8c.png)
+
+
 > nebula的数据模型中，点必须有Tag。不允许没有Tag的点存在。
 
 ```
-加内存写锁： 锁的vertexId/srcId
+加内存写锁： 锁的vertexId/srcId  -- 读没有锁保护，并发隔离性不变，和当前nebula一致
 {
    1）写vertex data key      写rocksdb data
    2）写tag_ref              写rocksdb ref
@@ -236,7 +240,7 @@ TODO: 需要benchmark下
 }
 ```
 
-
-
 #### 读取一个 Tag
+
+
 
