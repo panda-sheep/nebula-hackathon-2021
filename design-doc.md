@@ -135,7 +135,7 @@ JanusGraph 将一个点的ID作为KEY, “<所有属性>,<所有出边>，<所�
 ![image](https://user-images.githubusercontent.com/50101159/145525464-05e899a2-3ca0-4bd4-8e54-f0bb78ed5bc4.png)
 
 
-### vertex data 
+### vertex data （data_key）
 
 | Key |   Value |
 | -   |  - | 
@@ -149,7 +149,7 @@ index
 | type(NebulaKeyType::kIndex)_PartitionId  IndexId   Index binary  nullableBit   VertexId   | - |    
 需要vidlen来指定，不足补'\0'
 
-### edge data
+### edge data （data_key）
 
 | key | value |
 | -   | - |
@@ -163,7 +163,35 @@ index
 | PartitionId  IndexId  Index binary  nullableBit   SrcVertexId  EdgeRank  DstVertexId | - |
 
 
-## 
+## Ref_key 的设计
 
 ![image](https://user-images.githubusercontent.com/50101159/145528316-47b31ced-a276-4e03-ae97-8e09b7943920.png)
+
+
+### 点的设计
+
+![image](https://user-images.githubusercontent.com/50101159/145529888-a2b6e801-a69d-4598-92af-977113c78d73.png)
+
+一个点的多个Tag是同一个 Key-value
+
+### 边的设计
+
+Partition Src
+
+| Key  | CF 1 | CF 2|
+| -    |  -   | - |
+|type(1byte kedgeref_)_PartID(3bytes)_src(8bytes)_EdgeType(4bytes)+ \0 （第一个需要对齐） | count (出度) = 10| dst_vid1 + dst_vid2  + ... dst_vid10|
+|type(1byte kedgeref_)_PartID(3bytes)_src(8bytes)_EdgeType(4bytes)+ dst11               | count (出度)     | dst_vid11 + dst_vid2 |
+| ... | ... | ...|
+| type(1byte kedgeref_)_PartID(3bytes)_src(8bytes)_EdgeType(入边) + ... | count (入度) = 10 | ... | ...
+| ... | ... | ... |
+
+
+Partition dst （略）
+
+| Key  | CF 1 | CF 2|
+| -    |  -   | - |
+|type(1byte kedgeref_)_PartID()_dst(8bytes)_EdgeType(4bytes)  | ... | ... src_vid ...|
+
+
 
