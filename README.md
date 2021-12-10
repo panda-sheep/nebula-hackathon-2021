@@ -1,87 +1,90 @@
-<p align="center">
-  <img src="https://nebula-website-cn.oss-cn-hangzhou.aliyuncs.com/nebula-website/images/nebulagraph-logo.png"/>
-  <br> English | <a href="README-CN.md">中文</a>
-  <br>A distributed, scalable, lightning-fast graph database<br>
-</p>
-<p align="center">
-  <a href="https://app.codecov.io/gh/vesoft-inc/nebula">
-    <img src="https://codecov.io/github/vesoft-inc/nebula/coverage.svg?branch=master" alt="code coverage"/>
-  </a>
-  <a href="https://github.com/vesoft-inc/nebula/actions?workflow=nightly">
-    <img src="https://github.com/vesoft-inc/nebula/workflows/nightly/badge.svg" alt="nightly build"/>
-  </a>
-  <a href="https://github.com/vesoft-inc/nebula/stargazers">
-    <img src="http://githubbadges.com/star.svg?user=vesoft-inc&repo=nebula&style=default" alt="nebula star"/>
-  </a>
-  <a href="https://github.com/vesoft-inc/nebula/network/members">
-    <img src="http://githubbadges.com/fork.svg?user=vesoft-inc&repo=nebula&style=default" alt="nebula fork"/>
-  </a>
-  <br>
-</p>
+# 要解决什么问题
 
-# What is Nebula Graph?
+问题1： 悬挂边
 
-**Nebula Graph** is an open-source graph database capable of hosting super large scale graphs with dozens of billions of vertices (nodes) and trillions of edges, with milliseconds of latency.
+问题2： 出度、入度统计值
 
-Compared with other graph database solutions, **Nebula Graph** has the following advantages:
+问题3： 提高图结构的访问速度
 
-* Symmetrically distributed
-* Storage and computing separation
-* Horizontal scalability
-* Strong data consistency by RAFT protocol
-* OpenCypher-compatible query language
-* Role-based access control for higher level security
+# 问题有什么价值？
 
-## Notice of Release
+## 问题1： 悬挂边
 
-This repository hosts the source code of Nebula Graph versions before 2.0.0-alpha and after v2.5.x. If you are looking to use the versions between v2.0.0 and v2.5.x, please head to [Nebula Graph repo](https://github.com/vesoft-inc/nebula-graph).
+```
+(src)-[edge]->           有起点，有边，没有终点
+-[edge]->(dst)           没有起点，有边，有终点
+-[edge]->               没有起点，没有终点，有边
+```
 
-Nebula Graph 1.x is not actively maintained. Please move to Nebula Graph 2.x. The data format, rpc protocols, clients, etc. are not compatible between Nebula Graph v1.x and v2.x, but we do offer [upgrade guide](https://docs.nebula-graph.io/2.5.0/4.deployment-and-installation/3.upgrade-nebula-graph/upgrade-nebula-graph-to-250/).
+> 在图论上，这是不合理的。但在nebula中物理上是存在的。
 
-<!--
-To use the stable release, see [Nebula Graph 1.0](https://github.com/vesoft-inc/nebula).
+### 原因
+
+因为图元素建模的时候，EdgeA_Out 的存在性和 srcVertex 是两个独立的key。有可能发生： 
+
+1. graphd 只插入了边 EdgeA，没插入 srcVertx
+2. 删除 Vertex 和边的操作不原子。导致垃圾 key 的存在。 边key没删成功，把点key删成功了。
+3. Drop Tag 的时候，最后一个 Tag
+
+![image](https://user-images.githubusercontent.com/50101159/145525464-05e899a2-3ca0-4bd4-8e54-f0bb78ed5bc4.png)
 
 
-## Roadmap
+## 问题2： 出度、入度统计值
 
-See our [Roadmap](https://github.com/vesoft-inc/nebula/wiki/Nebula-Graph-Roadmap-2020) for what's coming soon in **Nebula Graph**.
--->
+可以用于：
 
-## Quick start
+1. 判断一个点是否是超级节点？
+2. 找到有哪些超级节点？
+3. 最短路径等算法的时候，默认BFS，走到超级节点就先暂停BFS，改成DFS或者采样。
+4. 执行计划CBO的时候，count是Cost的一个重要参数。
+5. 删除一个超级节点（和周围的边），rpc超时参数值设置。
 
-Read the [Getting started](https://docs.nebula-graph.io/2.0/2.quick-start/1.quick-start-workflow/) article for a quick start.
+### 原因：
+![image](https://user-images.githubusercontent.com/50101159/145525833-03bfa058-cbeb-482f-9fe8-7b5f57cac6c2.png)
+```
+EdgeA_Out 是单独的Key
+EdgeA_Out1
+EdgeA_Out2
+EdgeA_Out3
+…
+EdgeA_Outn
+```
+对于每个点，不做 prefix scan 不知道 n 是多少。扫描，或者建索引。
 
-<!--
-Please note that you need to install **Nebula Graph**, either by [installing source code](https://docs.nebula-graph.io/manual-EN/3.build-develop-and-administration/1.build/1.build-source-code/) or by [docker compose](https://docs.nebula-graph.io/manual-EN/3.build-develop-and-administration/1.build/2.build-by-docker/), before you can actually start using it. If you prefer a video tutorial, visit our [YouTube channel](https://www.youtube.com/channel/UC73V8q795eSEMxDX4Pvdwmw/videos).
--->
+## 问题3：提高图结构的访问速度
 
-## Getting help
-In case you encounter any problems playing around **Nebula Graph**, please reach out for help:
-* [FAQ](https://docs.nebula-graph.io/2.0/2.quick-start/0.FAQ/)
-* [Discussions](https://github.com/vesoft-inc/nebula/discussions)
+决大部分的图计算，只需要 edge key 的信息——图结构——以及一两个property（weight）。行式存储格式，SSD 扫描时带有基本无用的 value。
 
-## Documentation
+> BTW KV-seperation也是一种提升图结构访问的方式。
 
-* [English](https://docs.nebula-graph.io/)
+# 业界方案参考
 
-## Architecture
-![image](https://github.com/vesoft-inc/nebula-docs/raw/master/images/Nebula%20Arch.png)
+## JanusGraph (TitanDB)
 
-## Contributing
+![image](https://user-images.githubusercontent.com/50101159/145526122-f4896cce-dd05-4878-8b09-5b1a05522eda.png)
 
-Contributions are warmly welcomed and greatly appreciated. And here are a few ways you can contribute:
+JanusGraph 将一个点的ID作为KEY, “<所有属性>,<所有出边>，<所有入边>” 作为一个超级大的value
 
-* Start by some [issues](https://github.com/vesoft-inc/nebula/issues)
-* Submit Pull Requests to us. See [how-to-contribute](https://docs.nebula-graph.io/master/15.contribution/how-to-contribute/).
+好处：
 
-## Licensing
+1.	不会有悬挂边
+2.	Value里面可以增加一个count字段，统计出度和入度
 
-**Nebula Graph** is under [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) license, so you can freely download, modify, and deploy the source code to meet your needs. You can also freely deploy **Nebula Graph** as a back-end service to support your SaaS deployment.
+坏处：
 
-## Contact
+1.	The downside is that each edge has to be stored twice - once for each end vertex of the edge.
+2.	一个边的修改，涉及到两个超大value的修改。—读取到内存，中间位置的（内存）插入，写回硬盘
+3.	两个vertexID key的能否原子操作，由其存储引擎决定（HBASE，Cassandra）。Nebula 中的类似操作，叫做TOSS（见下）。
 
-* [Slack channel](https://join.slack.com/t/nebulagraph/shared_invite/zt-7ybejuqa-NCZBroh~PCh66d9kOQj45g)
-* [Stack Overflow](https://stackoverflow.com/questions/tagged/nebulagraph)
-* Twitter: [@NebulaGraph](https://twitter.com/NebulaGraph)
-* [LinkedIn page](https://www.linkedin.com/company/vesoft-nebula-graph)
-* email: info@vesoft.com
+## Neo4j 的简略结构
+
+![image](https://user-images.githubusercontent.com/50101159/145526558-500bb76d-ced0-4b8a-b167-afc91ad64cb5.png)
+
+![image](https://user-images.githubusercontent.com/50101159/145526612-e14a110f-b0b0-41bd-abc7-2e26d9cd1d94.png)
+
+
+
+
+## nebula-TOSS 
+
+
