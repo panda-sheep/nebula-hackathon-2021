@@ -149,19 +149,20 @@ index
 | type(NebulaKeyType::kIndex)_PartitionId  IndexId   Index binary  nullableBit   VertexId   | - |    
 需要vidlen来指定，不足补'\0'
 
-
-![image](https://user-images.githubusercontent.com/50101159/145528316-47b31ced-a276-4e03-ae97-8e09b7943920.png)
-
 ### edge data
 
 | key | value |
+| -   | - |
 | partId + srcId + edgeType + edgeRank + dstId + version   需要vidlen来指定，不足补'\0' |  Property values |
 |    type(1byte)_PartID(3bytes)_VertexID(8bytes)_EdgeType(4bytes)_Rank(8bytes)_otherVertexId(8bytes)_version(1) | - |
 
 | index | 
-
+| -   | - |
 | key | value |
 | PartitionId  IndexId  Index binary  nullableBit   SrcVertexId  EdgeRank  DstVertexId | - |
 
 
 ## 
+
+![image](https://user-images.githubusercontent.com/50101159/145528316-47b31ced-a276-4e03-ae97-8e09b7943920.png)
+
