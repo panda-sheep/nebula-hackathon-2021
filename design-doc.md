@@ -179,8 +179,8 @@ Partition Src
 
 | Key  | CF 1 | CF 2|
 | -    |  -   | - |
-|type(1byte kedgeref_)_PartID(3bytes)_src(8bytes)_EdgeType(4bytes)+ \0 （第一个需要对齐） | count (出度) = 10| dst_vid1 + dst_vid2  + ... dst_vid10|
-|type(1byte kedgeref_)_PartID(3bytes)_src(8bytes)_EdgeType(4bytes)+ dst11               | count (出度)     | dst_vid11 + dst_vid2 |
+|type(1byte kedgeref_)_PartID(3bytes)_src(8bytes)_EdgeType(4bytes)+ \0 （第一个需要对齐） | countN (出度) = 10| dst_vid1 + dst_vid2  + ... dst_vid10|
+|type(1byte kedgeref_)_PartID(3bytes)_src(8bytes)_EdgeType(4bytes)+ dst11               | countN (出度)       | dst_vid11 + dst_vid2 |
 | ... | ... | ...|
 | type(1byte kedgeref_)_PartID(3bytes)_src(8bytes)_EdgeType(入边) + ... | count (入度) = 10 | ... | ...
 | ... | ... | ... |
@@ -192,12 +192,51 @@ Partition dst （略）
 | -    |  -   | - |
 |type(1byte kedgeref_)_PartID()_dst(8bytes)_EdgeType(4bytes)  | ... | ... src_vid ...|
 
-> TODO： ranking 字段不常用(缺乏对应操作语法)，可以设计一个变长结构节省内存 (len(char)_dst1_str(0-8))。本次先考虑ranking只为0
+### 几个重要的说明
 
-### Ref_key 需要缓存在内存中
+#### Ref 需要常驻内存
 
-> 内存空间估算： 3 拷贝 )
-
-Ref_key 所在Rocksdb 与 Data_key 所在的Rocksdb 实例分开
+Ref_key 所在Rocksdb 与 Data_key 所在的Rocksdb 实例分开(rocksdb data,  rocksdb ref)
 
 选用 Plaintable
+
+#### countN = 10
+
+这里假设一行存放 10 个dst，实际上这个参数取决于：内存占用，平均出入度，新插入的写效率。
+
+
+内存空间估算（10亿条边为例: 3 拷贝 * 2 反向 * 1G /countN * 每行字节数 ）
+
+| countN | 一行字节 | 集群内存  |
+| - | - |
+| 10  | 96 个字节 | 9.6GB |
+| 50  | 416 | 4.9GB |
+| 100 | 816 | 4.8GB |
+
+TODO: 需要benchmark下
+
+#### ranking 字段
+
+目前不常用(缺乏对应操作语法)，也可以设计一个变长结构节省内存 (len(char)_dst1_str(0-8))。本次先考虑ranking只为0
+
+#### 影响Raft wal的地方
+
+1. leader 写入时，ref-key和data-key 用一条raftwal 发出去。follower 收到时，拆开； 持久化通过raft wal保证
+
+#### 写入一个 Tag
+
+> nebula的数据模型中，点必须有Tag。不允许没有Tag的点存在。
+
+```
+加内存写锁： 锁的vertexId/srcId
+{
+   1）写vertex data key      写rocksdb data
+   2）写tag_ref              写rocksdb ref
+   3) 从内存读取tag_ref，     然后更新内存 -- 是否可以不需要了？
+}
+```
+
+
+
+#### 读取一个 Tag
+
