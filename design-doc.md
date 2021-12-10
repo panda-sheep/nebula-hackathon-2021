@@ -165,7 +165,6 @@ index
 
 ## Ref_key 的设计
 
-![image](https://user-images.githubusercontent.com/50101159/145528316-47b31ced-a276-4e03-ae97-8e09b7943920.png)
 
 
 ### 点的设计
@@ -175,6 +174,8 @@ index
 一个点的多个Tag是同一个 Key-value
 
 ### 边的设计
+
+![image](https://user-images.githubusercontent.com/50101159/145528316-47b31ced-a276-4e03-ae97-8e09b7943920.png)
 
 Partition Src
 
