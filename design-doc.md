@@ -165,8 +165,6 @@ index
 
 ## Ref_key 的设计
 
-
-
 ### 点的设计
 
 ![image](https://user-images.githubusercontent.com/50101159/145529888-a2b6e801-a69d-4598-92af-977113c78d73.png)
@@ -194,5 +192,12 @@ Partition dst （略）
 | -    |  -   | - |
 |type(1byte kedgeref_)_PartID()_dst(8bytes)_EdgeType(4bytes)  | ... | ... src_vid ...|
 
+> TODO： ranking 字段不常用(缺乏对应操作语法)，可以设计一个变长结构节省内存 (len(char)_dst1_str(0-8))。本次先考虑ranking只为0
 
+### Ref_key 需要缓存在内存中
 
+> 内存空间估算： 3 拷贝 )
+
+Ref_key 所在Rocksdb 与 Data_key 所在的Rocksdb 实例分开
+
+选用 Plaintable
