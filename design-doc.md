@@ -242,5 +242,44 @@ TODO: 需要benchmark下
 
 #### 读取一个 Tag
 
+读取点或者tagId  ref：
 
+1. 从rocksdb ref 中读取vertexid, tagId
+
+
+读某个点的tag的属性：
+
+1. 从rocksdb ref 中读取tagId， 如果没有，直接返回，如果有的话:
+2. 从Rocksdb data读。
+
+#### 写第一条边的逻辑
+
+```
+{
+  加 src 内存写锁
+  1）检查src点存在，读取tag_ref, 不存在报错
+  2）本地edgeKey'   -- TOSS虚拟锁
+   
+  {
+     加 dst机器 内存锁
+     3) dst机器，检查dst点存在，读取tag_ref, 不存在报错
+     4）反向边的data key，写rocksdb data
+     5）data ref          rocksdb edge ref，并修改count
+   }
+
+  6) src机器: 
+     正向边data key，写rocksdb edge data
+  7）data ref，写rocksdb edge ref，并修改count
+  同时TOSS解锁
+}
+```
+
+#### 关于CF Edge 过大分离的问题补充
+
+![image](https://user-images.githubusercontent.com/50101159/145535785-a505fbbd-4b45-48a3-8cd2-723b368c2608.png)
+
+1. 当同一类型的边是按顺序插入时, dst1, dst3, dst5；每插入countN个后，下一个 dst 作为ref的第二行key的一部分。`src+outEdge1+\0`和 `src+outEdge1+dst11`。这样方便dstxx的定位（见后）
+2. 当同一类型的边是乱序插入时，`3*countN`满了之后（超级节点），这个Refkey要发生分裂。批量导入和增量导入可以考虑不同分裂的方式（见后）
+
+#### 
 
