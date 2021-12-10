@@ -252,7 +252,10 @@ TODO: 需要benchmark下
 1. 从rocksdb ref 中读取tagId， 如果没有，直接返回，如果有的话:
 2. 从Rocksdb data读。
 
-#### 写第一条边的逻辑
+#### 写一条边的逻辑
+
+![image](https://user-images.githubusercontent.com/50101159/145536908-1c68e7b6-8bc3-402d-a01e-2e27e9b5308e.png)
+
 
 ```
 {
@@ -274,12 +277,25 @@ TODO: 需要benchmark下
 }
 ```
 
-#### 关于CF Edge 过大分离的问题补充
+#### 关于CF Edge 过大分离的问题补充，& 批量插入边
 
 ![image](https://user-images.githubusercontent.com/50101159/145535785-a505fbbd-4b45-48a3-8cd2-723b368c2608.png)
 
 1. 当同一类型的边是按顺序插入时, dst1, dst3, dst5；每插入countN个后，下一个 dst 作为ref的第二行key的一部分。`src+outEdge1+\0`和 `src+outEdge1+dst11`。这样方便dstxx的定位（见后）
 2. 当同一类型的边是乱序插入时，`3*countN`满了之后（超级节点），这个Refkey要发生分裂。批量导入和增量导入可以考虑不同分裂的方式（见后）
+3. 不同类型Edge部分不同
 
-#### 
+#### 读取一条边或者多条边 （取边结构）
+
+1. rocksdb ref  查看边是否存在，没有的话报错。有的话，得到edgekey
+
+> countN 提升了取一批边结构的速度
+
+#### 取边结构+边属性
+
+1. rocksdb ref  查看边是否存在，没有的话报错。有的话，得到edgekey
+2. rocksdb data 去获取edgekey对应的属性
+
+
+
 
