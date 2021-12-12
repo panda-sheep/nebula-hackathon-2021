@@ -56,9 +56,16 @@ using IndexKey = std::tuple<GraphSpaceID, PartitionID>;
 using IndexGuard = folly::ConcurrentHashMap<IndexKey, IndexState>;
 
 using VMLI = std::tuple<GraphSpaceID, PartitionID, TagID, VertexID>;
+
+// used for tag and edge.
+// When used for edge, both srcId and dstId are locked
+using VEMLI = std::tuple<GraphSpaceID, PartitionID, VertexID>;
+
 using EMLI = std::tuple<GraphSpaceID, PartitionID, VertexID, EdgeType, EdgeRanking, VertexID>;
 using VerticesMemLock = MemoryLockCore<VMLI>;
 using EdgesMemLock = MemoryLockCore<EMLI>;
+
+using VerticeEdgesMemLock = MemoryLockCore<VEMLI>;
 
 class TransactionManager;
 class InternalStorageClient;
@@ -79,6 +86,8 @@ class StorageEnv {
   TransactionManager* txnMan_{nullptr};
   std::unique_ptr<VerticesMemLock> verticesML_{nullptr};
   std::unique_ptr<EdgesMemLock> edgesML_{nullptr};
+
+  std::unique_ptr<VerticeEdgesMemLock> verticeEdgesML_{nullptr};
   std::unique_ptr<kvstore::KVEngine> adminStore_{nullptr};
   int32_t adminSeqId_{0};
 

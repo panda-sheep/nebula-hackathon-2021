@@ -86,6 +86,56 @@ std::string NebulaKeyUtils::vertexKey(size_t vIdLen,
       .append(vIdLen - vId.size(), pad);
   return key;
 }
+
+// static
+std::string NebulaKeyUtils::vertexRefKey(size_t vIdLen,
+                                         PartitionID partId,
+                                         const VertexID& vId,
+                                         char pad) {
+  CHECK_GE(vIdLen, vId.size());
+  int32_t item = (partId << kPartitionOffset) | static_cast<uint32_t>(NebulaKeyType::kVertexRef);
+  std::string key;
+  key.reserve(sizeof(PartitionID) + vIdLen);
+  key.append(reinterpret_cast<const char*>(&item), sizeof(int32_t))
+      .append(vId.data(), vId.size())
+      .append(vIdLen - vId.size(), pad);
+  return key;
+}
+
+std::string NebulaKeyUtils::vertexRefVal(std::set<TagID> tagIds) {
+  std::string val;
+  apache::thrift::CompactSerializer::serialize(tagIds, &val);
+  return val;
+}
+
+std::set<TagID> NebulaKeyUtils::parseVertexRefVal(folly::StringPiece rawData) {
+  std::set<TagID> tagIds;
+  apache::thrift::CompactSerializer::deserialize(rawData, tagIds);
+  return tagIds;
+}
+
+// static
+std::string NebulaKeyUtils::edgeRefKey(size_t vIdLen,
+                                       PartitionID partId,
+                                       const VertexID& srcId,
+                                       EdgeType type,
+                                       const VertexID& firstDstId) {
+  CHECK_GE(vIdLen, srcId.size());
+  CHECK_GE(vIdLen, firstDstId.size());
+  int32_t item = (partId << kPartitionOffset) | static_cast<uint32_t>(NebulaKeyType::kEdgeRef);
+
+  std::string key;
+  // srcId and first dstId
+  key.reserve(kEdgeRefLen + (vIdLen << 1));
+  key.append(reinterpret_cast<const char*>(&item), sizeof(PartitionID))
+      .append(srcId.data(), srcId.size())
+      .append(vIdLen - srcId.size(), '\0')
+      .append(reinterpret_cast<const char*>(&type), sizeof(EdgeType))
+      .append(firstDstId.data(), firstDstId.size())
+      .append(vIdLen - firstDstId.size(), '\0');
+  return key;
+}
+
 // static
 std::string NebulaKeyUtils::systemCommitKey(PartitionID partId) {
   int32_t item = (partId << kPartitionOffset) | static_cast<uint32_t>(NebulaKeyType::kSystem);
