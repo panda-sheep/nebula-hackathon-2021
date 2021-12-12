@@ -215,6 +215,7 @@ void AddVerticesProcessor::doProcessWithRef(const cpp2::AddVerticesRequest& req)
         tagIds.emplace(tagId);
         batchHolder->put(std::move(key), std::move(retEnc.value()));
       }
+
       if (code != nebula::cpp2::ErrorCode::SUCCEEDED) {
         break;
       }

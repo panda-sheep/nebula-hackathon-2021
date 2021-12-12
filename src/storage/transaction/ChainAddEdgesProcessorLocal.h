@@ -51,6 +51,8 @@ class ChainAddEdgesProcessorLocal : public BaseProcessor<cpp2::ExecResponse>,
 
   bool lockEdges(const cpp2::AddEdgesRequest& req);
 
+  ErrorOr<nebula::cpp2::ErrorCode, bool> lockSrcIdEdges(const cpp2::AddEdgesRequest& req);
+
   bool checkTerm(const cpp2::AddEdgesRequest& req);
 
   bool checkVersion(const cpp2::AddEdgesRequest& req);
@@ -130,7 +132,8 @@ class ChainAddEdgesProcessorLocal : public BaseProcessor<cpp2::ExecResponse>,
   PartitionID localPartId_;
   PartitionID remotePartId_;
   cpp2::AddEdgesRequest req_;
-  std::unique_ptr<TransactionManager::LockGuard> lk_{nullptr};
+  // std::unique_ptr<TransactionManager::LockGuard> lk_{nullptr};
+  std::unique_ptr<nebula::MemoryLockGuard<VEMLI>> lk_{nullptr};
   int retryLimit_{10};
   // need to restrict all the phase in the same term.
   TermID restrictTerm_{-1};

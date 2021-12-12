@@ -137,6 +137,42 @@ std::string NebulaKeyUtils::edgeRefKey(size_t vIdLen,
 }
 
 // static
+std::string NebulaKeyUtils::edgeRefPrefix(size_t vIdLen,
+                                          PartitionID partId,
+                                          const VertexID& srcId,
+                                          EdgeType type) {
+  CHECK_GE(vIdLen, srcId.size());
+  int32_t item = (partId << kPartitionOffset) | static_cast<uint32_t>(NebulaKeyType::kEdgeRef);
+
+  std::string key;
+  // srcId and first dstId
+  key.reserve(kEdgeRefLen + vIdLen);
+  key.append(reinterpret_cast<const char*>(&item), sizeof(PartitionID))
+      .append(srcId.data(), srcId.size())
+      .append(vIdLen - srcId.size(), '\0')
+      .append(reinterpret_cast<const char*>(&type), sizeof(EdgeType));
+  return key;
+}
+
+VertexID NebulaKeyUtils::parseEdgeRefDstId(size_t vIdLen, folly::StringPiece rawData) {
+  auto offset = sizeof(PartitionID) + vIdLen + sizeof(EdgeType);
+  return rawKey.subpiece(offset, vIdLen);
+}
+
+std::string NebulaKeyUtils::edgeRefVal(std::set<VertexID> vids) {
+  std::string val;
+  apache::thrift::CompactSerializer::serialize(vids, &val);
+  return val;
+}
+
+// make sure set validate
+std::set<VertexID> NebulaKeyUtils::parseEdgeRefVal(folly::StringPiece rawData) {
+  std::set<VertexID> vids;
+  apache::thrift::CompactSerializer::deserialize(rawData, vids);
+  return vids;
+}
+
+// static
 std::string NebulaKeyUtils::systemCommitKey(PartitionID partId) {
   int32_t item = (partId << kPartitionOffset) | static_cast<uint32_t>(NebulaKeyType::kSystem);
   uint32_t type = static_cast<uint32_t>(NebulaSystemKeyType::kSystemCommit);

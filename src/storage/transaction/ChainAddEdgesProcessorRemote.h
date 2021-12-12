@@ -30,8 +30,11 @@ class ChainAddEdgesProcessorRemote : public BaseProcessor<cpp2::ExecResponse> {
 
   std::vector<std::string> getStrEdgeKeys(const cpp2::ChainAddEdgesRequest& req);
 
+  ErrorOr<nebula::cpp2::ErrorCode, bool> lockSrcIdEdges(const cpp2::ChainAddEdgesRequest& req);
+
  private:
   std::string uuid_;  // for debug purpose
+  std::unique_ptr<nebula::MemoryLockGuard<VEMLI>> lk_{nullptr};
 };
 
 }  // namespace storage
