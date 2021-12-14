@@ -209,9 +209,9 @@ Ref_key 所在Rocksdb 与 Data_key 所在的Rocksdb 实例分开(rocksdb data,  
 
 | countN | 一行字节 | 集群内存  |
 | - | - | - |
-| 10  | 96 个字节 | 9.6GB |
-| 50  | 416 | 4.9GB |
-| 100 | 816 | 4.8GB |
+| 10  | 96 个字节 | 96GB |
+| 50  | 416 | 49GB |
+| 100 | 816 | 48GB |
 
 TODO: 需要benchmark下
 
