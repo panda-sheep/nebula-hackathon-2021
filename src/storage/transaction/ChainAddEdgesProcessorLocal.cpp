@@ -375,6 +375,7 @@ void ChainAddEdgesProcessorLocal::eraseDoublePrime() {
   }
 }
 
+/*
 bool ChainAddEdgesProcessorLocal::lockEdges(const cpp2::AddEdgesRequest& req) {
   auto partId = req.get_parts().begin()->first;
   auto* lockCore = env_->txnMan_->getLockCore(req.get_space_id(), partId);
@@ -389,6 +390,7 @@ bool ChainAddEdgesProcessorLocal::lockEdges(const cpp2::AddEdgesRequest& req) {
   lk_ = std::make_unique<TransactionManager::LockGuard>(lockCore, keys);
   return lk_->isLocked();
 }
+*/
 
 ErrorOr<nebula::cpp2::ErrorCode, bool> ChainAddEdgesProcessorLocal::lockSrcIdEdges(
     const cpp2::AddEdgesRequest& req) {
@@ -407,6 +409,7 @@ ErrorOr<nebula::cpp2::ErrorCode, bool> ChainAddEdgesProcessorLocal::lockSrcIdEdg
     }
     keys.emplace_back(spaceId_, partId, srcId);
   }
+  // 2) SrcId of the output edge add memory lock
   lk_ = std::make_unique<nebula::MemoryLockGuard<VEMLI>>(env_->verticeEdgesML_.get(), keys);
   return lk_->isLocked();
 }

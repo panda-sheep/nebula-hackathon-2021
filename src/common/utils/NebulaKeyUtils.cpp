@@ -154,9 +154,9 @@ std::string NebulaKeyUtils::edgeRefPrefix(size_t vIdLen,
   return key;
 }
 
-VertexID NebulaKeyUtils::parseEdgeRefDstId(size_t vIdLen, folly::StringPiece rawData) {
+VertexID NebulaKeyUtils::parseEdgeRefDstId(size_t vIdLen, folly::StringPiece rawKey) {
   auto offset = sizeof(PartitionID) + vIdLen + sizeof(EdgeType);
-  return rawKey.subpiece(offset, vIdLen);
+  return rawKey.subpiece(offset, vIdLen).str();
 }
 
 std::string NebulaKeyUtils::edgeRefVal(std::set<VertexID> vids) {

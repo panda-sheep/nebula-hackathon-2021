@@ -70,7 +70,7 @@ ErrorOr<nebula::cpp2::ErrorCode, bool> ChainAddEdgesProcessorRemote::lockSrcIdEd
   std::vector<VEMLI> keys;
   for (auto& edge : req.get_parts().begin()->second) {
     auto srcId = edge.get_key().get_src().getStr();
-    // Use vertexref to check if the point exists
+    // 1) Use vertexref to check if the vertex exists
     auto key = NebulaKeyUtils::vertexRefKey(spaceVidLen_, partId, srcId);
     std::string val;
     auto ret = env_->kvstore_->get(req.get_space_id(), partId, key, &val);

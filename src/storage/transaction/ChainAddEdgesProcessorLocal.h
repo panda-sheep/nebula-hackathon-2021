@@ -49,7 +49,7 @@ class ChainAddEdgesProcessorLocal : public BaseProcessor<cpp2::ExecResponse>,
 
   void doRpc(folly::Promise<Code>&& pro, cpp2::AddEdgesRequest&& req, int retry = 0) noexcept;
 
-  bool lockEdges(const cpp2::AddEdgesRequest& req);
+  // bool lockEdges(const cpp2::AddEdgesRequest& req);
 
   ErrorOr<nebula::cpp2::ErrorCode, bool> lockSrcIdEdges(const cpp2::AddEdgesRequest& req);
 
