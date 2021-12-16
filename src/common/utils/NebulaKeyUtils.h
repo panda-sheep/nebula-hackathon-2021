@@ -75,6 +75,8 @@ class NebulaKeyUtils final {
                                   const VertexID& vId,
                                   char pad = '\0');
 
+  static bool isVertexRef(const folly::StringPiece& rawKey);
+
   static std::string vertexRefVal(std::set<TagID> tagIds);
 
   static std::set<TagID> parseVertexRefVal(folly::StringPiece val);
@@ -89,6 +91,8 @@ class NebulaKeyUtils final {
                                    PartitionID partId,
                                    const VertexID& srcId,
                                    EdgeType type);
+
+  static bool isEdgeRef(const folly::StringPiece& rawKey);
 
   static VertexID parseEdgeRefDstId(size_t vIdLen, folly::StringPiece rawData);
 

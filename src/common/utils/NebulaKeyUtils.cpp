@@ -102,6 +102,12 @@ std::string NebulaKeyUtils::vertexRefKey(size_t vIdLen,
   return key;
 }
 
+bool NebulaKeyUtils::isVertexRef(const folly::StringPiece& rawKey) {
+  constexpr int32_t len = static_cast<int32_t>(sizeof(NebulaKeyType));
+  auto type = readInt<uint32_t>(rawKey.data(), len) & kTypeMask;
+  return static_cast<NebulaKeyType>(type) == NebulaKeyType::kVertexRef;
+}
+
 std::string NebulaKeyUtils::vertexRefVal(std::set<TagID> tagIds) {
   std::string val;
   apache::thrift::CompactSerializer::serialize(tagIds, &val);
@@ -152,6 +158,12 @@ std::string NebulaKeyUtils::edgeRefPrefix(size_t vIdLen,
       .append(vIdLen - srcId.size(), '\0')
       .append(reinterpret_cast<const char*>(&type), sizeof(EdgeType));
   return key;
+}
+
+bool NebulaKeyUtils::isEdgeRef(const folly::StringPiece& rawKey) {
+  constexpr int32_t len = static_cast<int32_t>(sizeof(NebulaKeyType));
+  auto type = readInt<uint32_t>(rawKey.data(), len) & kTypeMask;
+  return static_cast<NebulaKeyType>(type) == NebulaKeyType::kEdgeRef;
 }
 
 VertexID NebulaKeyUtils::parseEdgeRefDstId(size_t vIdLen, folly::StringPiece rawKey) {

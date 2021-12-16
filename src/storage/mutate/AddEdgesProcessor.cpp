@@ -242,13 +242,13 @@ void AddEdgesProcessor::doProcessWithRef(const cpp2::AddEdgesRequest& req) {
       // If it is empty, it means that edge_ref data not exists before
       if (result.empty()) {
         // first key
-        if (dstIds.size() <= 10) {
+        if (dstIds.size() <= FLAGS_max_edge_in_ref) {
           result.emplace("", dstIds);
         } else {
           VertexID fistDstId = "";
           int i = 0;
           for (auto iter = dstIds.begin(); iter != dstIds.end(); iter++, i++) {
-            if (i != 0 && (i % 10 == 0)) {
+            if (i != 0 && (i % FLAGS_max_edge_in_ref == 0)) {
               fistDstId = *iter;
             }
             result[fistDstId].emplace(*iter);
