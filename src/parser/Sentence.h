@@ -103,6 +103,8 @@ class Sentence {
     kGetConfig,
     kFetchVertices,
     kFetchEdges,
+    kFetchOutdegree,
+    kFetchIndegree,
     kFindPath,
     kLimit,
     kGroupBy,

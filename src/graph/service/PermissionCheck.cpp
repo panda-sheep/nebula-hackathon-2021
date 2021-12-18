@@ -125,6 +125,8 @@ Status PermissionCheck::permissionCheck(ClientSession *session,
     case Sentence::Kind::kOrderBy:
     case Sentence::Kind::kFetchVertices:
     case Sentence::Kind::kFetchEdges:
+    case Sentence::Kind::kFetchOutdegree:
+    case Sentence::Kind::kFetchIndegree:
     case Sentence::Kind::kFindPath:
     case Sentence::Kind::kGetSubgraph:
     case Sentence::Kind::kLimit:

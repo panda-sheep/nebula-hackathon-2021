@@ -202,6 +202,7 @@ static constexpr size_t kCommentLengthLimit = 256;
 %token KW_KILL KW_QUERY KW_QUERIES KW_TOP
 %token KW_GEOGRAPHY KW_POINT KW_LINESTRING KW_POLYGON
 %token KW_LIST KW_MAP
+%token KW_OUTDEGREE KW_INDEGREE
 
 /* symbols */
 %token L_PAREN R_PAREN L_BRACKET R_BRACKET L_BRACE R_BRACE COMMA
@@ -373,6 +374,7 @@ static constexpr size_t kCommentLengthLimit = 256;
 %type <sentence> go_sentence match_sentence lookup_sentence find_path_sentence get_subgraph_sentence
 %type <sentence> group_by_sentence order_by_sentence limit_sentence
 %type <sentence> fetch_sentence fetch_vertices_sentence fetch_edges_sentence
+%type <sentence> fetch_outdegree_sentence fetch_indegree_sentence
 %type <sentence> set_sentence piped_sentence assignment_sentence
 %type <sentence> yield_sentence use_sentence
 
@@ -532,6 +534,8 @@ unreserved_keyword
     | KW_POLYGON            { $$ = new std::string("polygon"); }
     | KW_HTTP               { $$ = new std::string("http"); }
     | KW_HTTPS              { $$ = new std::string("https"); }
+    | KW_OUTDEGREE          { $$ = new std::string("outdegree"); }
+    | KW_INDEGREE           { $$ = new std::string("indegree"); }
     ;
 
 expression
@@ -2091,6 +2095,18 @@ fetch_vertices_sentence
     }
     ;
 
+fetch_outdegree_sentence
+    : KW_FETCH KW_OUTDEGREE L_PAREN vid COMMA name_label R_PAREN {
+        $$ = new FetchOutdegreeSentence($4, $6);
+    }
+    ;
+
+fetch_indegree_sentence
+    : KW_FETCH KW_INDEGREE L_PAREN vid COMMA name_label R_PAREN {
+        $$ = new FetchIndegreeSentence($4, $6);
+    }
+    ;
+
 edge_key
     : vid R_ARROW vid AT rank {
         $$ = new EdgeKey($1, $3, $5);
@@ -2147,6 +2163,8 @@ fetch_edges_sentence
 fetch_sentence
     : fetch_vertices_sentence { $$ = $1; }
     | fetch_edges_sentence { $$ = $1; }
+    | fetch_outdegree_sentence { $$ = $1; }
+    | fetch_indegree_sentence { $$ = $1; }
     ;
 
 find_path_sentence

@@ -16,6 +16,7 @@ nebula_add_library(
     query/GetEdgesExecutor.cpp
     query/GetNeighborsExecutor.cpp
     query/GetVerticesExecutor.cpp
+    query/GetDegreeExecutor.cpp
     query/IntersectExecutor.cpp
     query/LimitExecutor.cpp
     query/SampleExecutor.cpp

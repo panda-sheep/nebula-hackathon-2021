@@ -41,6 +41,10 @@ const char* PlanNode::toString(PlanNode::Kind kind) {
       return "GetVertices";
     case Kind::kGetEdges:
       return "GetEdges";
+    case Kind::kGetOutdegree:
+      return "GetOutdegree";
+    case Kind::kGetIndegree:
+      return "GetIndegree";
     case Kind::kIndexScan:
       return "IndexScan";
     case Kind::kTagIndexFullScan:

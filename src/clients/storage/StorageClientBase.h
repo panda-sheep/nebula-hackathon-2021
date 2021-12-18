@@ -205,6 +205,10 @@ class StorageClientBase {
     return {req.get_part_id()};
   }
 
+  std::vector<PartitionID> getReqPartsId(const cpp2::GetDegreeRequest& req) const {
+    return {req.get_part_id()};
+  }
+
   std::vector<PartitionID> getReqPartsId(const cpp2::GetUUIDReq& req) const {
     return {req.get_part_id()};
   }

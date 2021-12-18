@@ -19,6 +19,8 @@ nebula_add_library(
     ACLValidator.cpp
     FetchEdgesValidator.cpp
     FetchVerticesValidator.cpp
+    FetchOutdegreeValidator.cpp
+    FetchIndegreeValidator.cpp
     LimitValidator.cpp
     OrderByValidator.cpp
     YieldValidator.cpp

@@ -300,6 +300,18 @@ struct GetPropResponse {
  */
 
 
+struct GetDegreeRequest {
+    1: common.GraphSpaceID  space_id,
+    2: common.PartitionID   part_id,
+    3: common.Value         vertex_id,
+    4: common.EdgeType      edge_type,
+}
+
+struct GetDegreeResponse {
+    1: ResponseCommon  result,
+    2: common.DataSet  props,
+}
+
 /*
  * Start of AddVertices section
  */
@@ -659,6 +671,9 @@ service GraphStorageService {
 
     // Get vertex or edge properties
     GetPropResponse getProps(1: GetPropRequest req);
+
+    // Get vertex outdegree or indegree over edge
+    GetDegreeResponse getDegree(1: GetDegreeRequest req);
 
     ExecResponse addVertices(1: AddVerticesRequest req);
     ExecResponse addEdges(1: AddEdgesRequest req);

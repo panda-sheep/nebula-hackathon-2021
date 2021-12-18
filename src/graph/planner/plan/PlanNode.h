@@ -29,6 +29,8 @@ class PlanNode {
     kGetEdges,
     kTraverse,
     kAppendVertices,
+    kGetOutdegree,
+    kGetIndegree,
 
     // ------------------
     // TODO(yee): refactor in logical plan

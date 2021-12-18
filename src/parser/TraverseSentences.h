@@ -301,6 +301,44 @@ class FetchEdgesSentence final : public Sentence {
   std::unique_ptr<YieldClause> yieldClause_;
 };
 
+class FetchOutdegreeSentence final : public Sentence {
+ public:
+  explicit FetchOutdegreeSentence(Expression* vid, std::string* name) {
+    kind_ = Kind::kFetchOutdegree;
+    vid_ = vid;
+    edgeName_.reset(name);
+  }
+
+  Expression* getVid() const { return vid_; }
+
+  const std::string* getEdgeName() const { return edgeName_.get(); }
+
+  std::string toString() const override;
+
+ private:
+  Expression* vid_{nullptr};
+  std::unique_ptr<std::string> edgeName_;
+};
+
+class FetchIndegreeSentence final : public Sentence {
+ public:
+  explicit FetchIndegreeSentence(Expression* vid, std::string* name) {
+    kind_ = Kind::kFetchIndegree;
+    vid_ = vid;
+    edgeName_.reset(name);
+  }
+
+  Expression* getVid() const { return vid_; }
+
+  const std::string* getEdgeName() const { return edgeName_.get(); }
+
+  std::string toString() const override;
+
+ private:
+  Expression* vid_{nullptr};
+  std::unique_ptr<std::string> edgeName_;
+};
+
 class FindPathSentence final : public Sentence {
  public:
   FindPathSentence(bool isShortest, bool withProp, bool noLoop) {

@@ -70,6 +70,7 @@
 #include "graph/executor/query/DataCollectExecutor.h"
 #include "graph/executor/query/DedupExecutor.h"
 #include "graph/executor/query/FilterExecutor.h"
+#include "graph/executor/query/GetDegreeExecutor.h"
 #include "graph/executor/query/GetEdgesExecutor.h"
 #include "graph/executor/query/GetNeighborsExecutor.h"
 #include "graph/executor/query/GetVerticesExecutor.h"
@@ -171,6 +172,12 @@ Executor *Executor::makeExecutor(QueryContext *qctx, const PlanNode *node) {
     }
     case PlanNode::Kind::kGetVertices: {
       return pool->add(new GetVerticesExecutor(node, qctx));
+    }
+    case PlanNode::Kind::kGetOutdegree: {
+      return pool->add(new GetOutdegreeExecutor(node, qctx));
+    }
+    case PlanNode::Kind::kGetIndegree: {
+      return pool->add(new GetIndegreeExecutor(node, qctx));
     }
     case PlanNode::Kind::kScanEdges: {
       return pool->add(new ScanEdgesExecutor(node, qctx));
