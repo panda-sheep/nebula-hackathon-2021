@@ -309,6 +309,8 @@ struct GetDegreeRequest {
 
 struct GetDegreeResponse {
     1: ResponseCommon  result,
+    // Currently there is only one column. When the edgetype is greater than 0, the result is outdegree.
+    // when the edgetype is less than 0, the result is indegree
     2: common.DataSet  props,
 }
 

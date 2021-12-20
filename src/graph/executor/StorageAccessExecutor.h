@@ -116,6 +116,8 @@ class StorageAccessExecutor : public Executor {
             "add/update/delete one edge/vertex at the same time.");
       case nebula::cpp2::ErrorCode::E_FILTER_OUT:
         return Status::OK();
+      case nebula::cpp2::ErrorCode::E_VERTEX_NOT_FOUND:
+        return Status::Error("Storage Error: vertexId not found.");
       default:
         auto status = Status::Error("Storage Error: part: %d, error: %s(%d).",
                                     partId,
