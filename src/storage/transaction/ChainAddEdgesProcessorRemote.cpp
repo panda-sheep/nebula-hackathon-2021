@@ -73,11 +73,16 @@ ErrorOr<nebula::cpp2::ErrorCode, bool> ChainAddEdgesProcessorRemote::lockSrcIdEd
     // 1) Use vertexref to check if the vertex exists
     auto key = NebulaKeyUtils::vertexRefKey(spaceVidLen_, partId, srcId);
     std::string val;
-    auto ret = env_->kvstore_->get(req.get_space_id(), partId, key, &val);
+    auto spaceId = req.get_space_id();
+    auto ret = env_->kvstore_->get(spaceId, partId, key, &val);
     if (ret != nebula::cpp2::ErrorCode::SUCCEEDED) {
+      if (ret == nebula::cpp2::ErrorCode::E_KEY_NOT_FOUND) {
+        LOG(ERROR) << "Space " << spaceId << ", vid is " << srcId << " not exists.";
+        ret = nebula::cpp2::ErrorCode::E_VERTEX_NOT_FOUND;
+      }
       return ret;
     }
-    keys.emplace_back(req.get_space_id(), partId, srcId);
+    keys.emplace_back(spaceId, partId, srcId);
   }
   lk_ = std::make_unique<nebula::MemoryLockGuard<VEMLI>>(env_->verticeEdgesML_.get(), keys);
   return lk_->isLocked();

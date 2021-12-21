@@ -403,7 +403,7 @@ rocksdb::Status initRefRocksdbOptions(rocksdb::Options& baseOpts,
   }
 
   size_t prefixLength = sizeof(PartitionID) + vidLen;
-  // "PlainTable") {
+  // "PlainTable"
   // wal_dir need to be specified by rocksdb_wal_dir.
   //
   // WAL_ttl_seconds is 0 by default in rocksdb, which will check every 10

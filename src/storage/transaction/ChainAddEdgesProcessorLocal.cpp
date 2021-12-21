@@ -405,6 +405,10 @@ ErrorOr<nebula::cpp2::ErrorCode, bool> ChainAddEdgesProcessorLocal::lockSrcIdEdg
     std::string val;
     auto ret = env_->kvstore_->get(spaceId_, partId, key, &val);
     if (ret != nebula::cpp2::ErrorCode::SUCCEEDED) {
+      if (ret == nebula::cpp2::ErrorCode::E_KEY_NOT_FOUND) {
+        LOG(ERROR) << "Space " << spaceId_ << ", vid is " << srcId << " not exists.";
+        ret = nebula::cpp2::ErrorCode::E_VERTEX_NOT_FOUND;
+      }
       return ret;
     }
     keys.emplace_back(spaceId_, partId, srcId);
