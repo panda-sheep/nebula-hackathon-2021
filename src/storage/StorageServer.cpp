@@ -205,6 +205,8 @@ bool StorageServer::start() {
 
   env_->verticesML_ = std::make_unique<VerticesMemLock>();
   env_->edgesML_ = std::make_unique<EdgesMemLock>();
+  env_->verticeEdgesML_ = std::make_unique<VerticeEdgesMemLock>();
+
   env_->adminStore_ = getAdminStoreInstance();
   env_->adminSeqId_ = getAdminStoreSeqId();
   taskMgr_ = AdminTaskManager::instance(env_.get());

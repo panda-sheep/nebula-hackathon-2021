@@ -35,7 +35,7 @@ Status FetchIndegreeValidator::validateEdgeName() {
   auto status = qctx_->schemaMng()->toEdgeType(spaceId_, edgeName_);
   NG_RETURN_IF_ERROR(status);
   edgeType_ = -status.value();
-  auto edgeSchema = qctx_->schemaMng()->getEdgeSchema(spaceId_, edgeType_);
+  auto edgeSchema = qctx_->schemaMng()->getEdgeSchema(spaceId_, std::abs(edgeType_));
   if (edgeSchema == nullptr) {
     return Status::SemanticError("No schema found for `%s'", edgeName_.c_str());
   }
