@@ -35,6 +35,17 @@ void ChainAddEdgesProcessorRemote::process(const cpp2::ChainAddEdgesRequest& req
     } else {
       spaceVidLen_ = vIdLen.value();
     }
+
+    // 1) lock src vid  and check src vid using vertexRef
+    auto ret = lockSrcIdEdges(req);
+    if (!nebula::ok(ret)) {
+      code = nebula::error(ret);
+      break;
+    }
+    if (!nebula::value(ret)) {
+      code = Code::E_WRITE_WRITE_CONFLICT;
+      break;
+    }
   } while (0);
 
   if (code == nebula::cpp2::ErrorCode::SUCCEEDED) {
@@ -50,6 +61,31 @@ void ChainAddEdgesProcessorRemote::process(const cpp2::ChainAddEdgesRequest& req
     pushResultCode(code, partId);
     onFinished();
   }
+}
+
+ErrorOr<nebula::cpp2::ErrorCode, bool> ChainAddEdgesProcessorRemote::lockSrcIdEdges(
+    const cpp2::ChainAddEdgesRequest& req) {
+  auto partId = req.get_parts().begin()->first;
+
+  std::vector<VEMLI> keys;
+  for (auto& edge : req.get_parts().begin()->second) {
+    auto srcId = edge.get_key().get_src().getStr();
+    // 1) Use vertexref to check if the vertex exists
+    auto key = NebulaKeyUtils::vertexRefKey(spaceVidLen_, partId, srcId);
+    std::string val;
+    auto spaceId = req.get_space_id();
+    auto ret = env_->kvstore_->get(spaceId, partId, key, &val);
+    if (ret != nebula::cpp2::ErrorCode::SUCCEEDED) {
+      if (ret == nebula::cpp2::ErrorCode::E_KEY_NOT_FOUND) {
+        LOG(ERROR) << "Space " << spaceId << ", vid is " << srcId << " not exists.";
+        ret = nebula::cpp2::ErrorCode::E_VERTEX_NOT_FOUND;
+      }
+      return ret;
+    }
+    keys.emplace_back(spaceId, partId, srcId);
+  }
+  lk_ = std::make_unique<nebula::MemoryLockGuard<VEMLI>>(env_->verticeEdgesML_.get(), keys);
+  return lk_->isLocked();
 }
 
 bool ChainAddEdgesProcessorRemote::checkTerm(const cpp2::ChainAddEdgesRequest& req) {

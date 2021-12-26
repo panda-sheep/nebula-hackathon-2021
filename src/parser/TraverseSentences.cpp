@@ -163,6 +163,26 @@ std::string FetchEdgesSentence::toString() const {
   return buf;
 }
 
+std::string FetchOutdegreeSentence::toString() const {
+  std::string buf;
+  buf.reserve(256);
+  buf += "FETCH OUTDEGREE( ";
+  buf += vid_->toString();
+  buf += ", " + *edgeName_;
+  buf += ")";
+  return buf;
+}
+
+std::string FetchIndegreeSentence::toString() const {
+  std::string buf;
+  buf.reserve(256);
+  buf += "FETCH INDEGREE( ";
+  buf += vid_->toString();
+  buf += ", " + *edgeName_;
+  buf += ")";
+  return buf;
+}
+
 std::string GroupBySentence::toString() const {
   std::string buf;
   buf.reserve(256);

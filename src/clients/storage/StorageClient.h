@@ -77,6 +77,10 @@ class StorageClient : public StorageClientBase<cpp2::GraphStorageServiceAsyncCli
       int64_t limit = std::numeric_limits<int64_t>::max(),
       const Expression* filter = nullptr);
 
+  //  Whether it is out-degree or in-degree, it is judged by the sign of edgeType
+  folly::Future<StatusOr<storage::cpp2::GetDegreeResponse>> getDegree(
+      const CommonRequestParam& param, Value vertexId, EdgeType edgeType);
+
   StorageRpcRespFuture<cpp2::ExecResponse> addVertices(
       const CommonRequestParam& param,
       std::vector<cpp2::NewVertex> vertices,

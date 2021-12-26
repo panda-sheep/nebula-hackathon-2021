@@ -69,6 +69,37 @@ class NebulaKeyUtils final {
                                PartitionID partId,
                                const VertexID& vId,
                                char pad = '\0');
+
+  static std::string vertexRefKey(size_t vIdLen,
+                                  PartitionID partId,
+                                  const VertexID& vId,
+                                  char pad = '\0');
+
+  static bool isVertexRef(const folly::StringPiece& rawKey);
+
+  static std::string vertexRefVal(std::set<TagID> tagIds);
+
+  static std::set<TagID> parseVertexRefVal(folly::StringPiece val);
+
+  static std::string edgeRefKey(size_t vIdLen,
+                                PartitionID partId,
+                                const VertexID& srcId,
+                                EdgeType type,
+                                const VertexID& firstDstId);
+
+  static std::string edgeRefPrefix(size_t vIdLen,
+                                   PartitionID partId,
+                                   const VertexID& srcId,
+                                   EdgeType type);
+
+  static bool isEdgeRef(const folly::StringPiece& rawKey);
+
+  static VertexID parseEdgeRefDstId(size_t vIdLen, folly::StringPiece rawData);
+
+  static std::string edgeRefVal(std::set<VertexID> vids);
+
+  static std::set<VertexID> parseEdgeRefVal(folly::StringPiece rawData);
+
   static std::string systemCommitKey(PartitionID partId);
 
   static std::string systemPartKey(PartitionID partId);

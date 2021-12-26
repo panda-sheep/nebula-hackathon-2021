@@ -130,6 +130,8 @@ class KVEngine {
 
   virtual nebula::cpp2::ErrorCode backup() = 0;
 
+  virtual nebula::cpp2::ErrorCode backupRef() = 0;
+
  protected:
   GraphSpaceID spaceId_;
 };

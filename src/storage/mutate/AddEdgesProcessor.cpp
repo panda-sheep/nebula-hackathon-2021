@@ -52,7 +52,8 @@ void AddEdgesProcessor::process(const cpp2::AddEdgesRequest& req) {
   CHECK_NOTNULL(env_->kvstore_);
 
   if (indexes_.empty()) {
-    doProcess(req);
+    // doProcess(req);
+    doProcessWithRef(req);
   } else {
     doProcessWithIndex(req);
   }
@@ -143,6 +144,174 @@ void AddEdgesProcessor::doProcess(const cpp2::AddEdgesRequest& req) {
       }
     }
   }
+}
+
+// For the reverse side, the lock has been added in ChainAddEdgesProcessorRemote::process
+void AddEdgesProcessor::doProcessWithRef(const cpp2::AddEdgesRequest& req) {
+  const auto& partEdges = req.get_parts();
+  const auto& propNames = req.get_prop_names();
+  for (auto& part : partEdges) {
+    std::unique_ptr<kvstore::BatchHolder> batchHolder = std::make_unique<kvstore::BatchHolder>();
+    auto partId = part.first;
+    const auto& newEdges = part.second;
+    auto code = nebula::cpp2::ErrorCode::SUCCEEDED;
+
+    std::unordered_set<std::string> visited;
+    visited.reserve(newEdges.size());
+
+    // <srcid, edgeType> -> <dstId>
+    std::map<std::pair<VertexID, EdgeType>, std::set<VertexID>> srcIdToDstId;
+    for (auto& newEdge : newEdges) {
+      auto edgeKey = *newEdge.key_ref();
+
+      VLOG(3) << "PartitionID: " << partId << ", VertexID: " << *edgeKey.src_ref()
+              << ", EdgeType: " << *edgeKey.edge_type_ref()
+              << ", EdgeRanking: " << *edgeKey.ranking_ref()
+              << ", VertexID: " << *edgeKey.dst_ref();
+
+      if (!NebulaKeyUtils::isValidVidLen(
+              spaceVidLen_, (*edgeKey.src_ref()).getStr(), (*edgeKey.dst_ref()).getStr())) {
+        LOG(ERROR) << "Space " << spaceId_ << " vertex length invalid, "
+                   << "space vid len: " << spaceVidLen_ << ", edge srcVid: " << *edgeKey.src_ref()
+                   << ", dstVid: " << *edgeKey.dst_ref();
+        code = nebula::cpp2::ErrorCode::E_INVALID_VID;
+        break;
+      }
+
+      auto srcId = (*edgeKey.src_ref()).getStr();
+      auto dstId = (*edgeKey.dst_ref()).getStr();
+      auto edgetype = *edgeKey.edge_type_ref();
+      auto key = NebulaKeyUtils::edgeKey(
+          spaceVidLen_, partId, srcId, edgetype, *edgeKey.ranking_ref(), dstId);
+      if (ifNotExists_) {
+        if (!visited.emplace(key).second) {
+          continue;
+        }
+        auto obsIdx = findOldValue(partId, key);
+        if (nebula::ok(obsIdx)) {
+          // already exists in kvstore
+          if (!nebula::value(obsIdx).empty()) {
+            continue;
+          }
+        } else {
+          code = nebula::error(obsIdx);
+          break;
+        }
+      }
+
+      auto schema = env_->schemaMan_->getEdgeSchema(spaceId_, std::abs(*edgeKey.edge_type_ref()));
+      if (!schema) {
+        LOG(ERROR) << "Space " << spaceId_ << ", Edge " << *edgeKey.edge_type_ref() << " invalid";
+        code = nebula::cpp2::ErrorCode::E_EDGE_NOT_FOUND;
+        break;
+      }
+
+      auto props = newEdge.get_props();
+      WriteResult wRet;
+      auto retEnc = encodeRowVal(schema.get(), propNames, props, wRet);
+      if (!retEnc.ok()) {
+        LOG(ERROR) << retEnc.status();
+        code = writeResultTo(wRet, true);
+        break;
+      } else {
+        batchHolder->put(std::move(key), std::move(retEnc.value()));
+        srcIdToDstId[std::make_pair(srcId, edgetype)].emplace(dstId);
+      }
+    }
+    if (code != nebula::cpp2::ErrorCode::SUCCEEDED) {
+      handleAsync(spaceId_, partId, code);
+      continue;
+    }
+
+    // 2) Add edge ref data
+    //  <srcid, edgeType> -> set<dstId>
+    for (auto& elem : srcIdToDstId) {
+      auto srcId = elem.first.first;
+      auto edgetype = elem.first.second;
+      auto dstIds = elem.second;
+      std::vector<kvstore::KV> data;
+
+      // map<firstDst, set<dstIds>>
+      auto dstToDstRange = getLastestEdgeRef(partId, srcId, edgetype);
+      if (!nebula::ok(dstToDstRange)) {
+        code = nebula::error(dstToDstRange);
+        break;
+      }
+      std::map<VertexID, std::set<VertexID>> result = nebula::value(dstToDstRange);
+
+      // If it is empty, it means that edge_ref data not exists before
+      if (result.empty()) {
+        // first key
+        if (dstIds.size() <= FLAGS_max_edge_in_ref) {
+          result.emplace("", dstIds);
+        } else {
+          VertexID fistDstId = "";
+          int i = 0;
+          for (auto iter = dstIds.begin(); iter != dstIds.end(); iter++, i++) {
+            if (i != 0 && (i % FLAGS_max_edge_in_ref == 0)) {
+              fistDstId = *iter;
+            }
+            result[fistDstId].emplace(*iter);
+          }
+        }
+      } else {
+        // Add the element to the corresponding range
+        // dstIds is set
+        for (auto iter = dstIds.begin(); iter != dstIds.end(); iter++) {
+          // map<fistdst, set<dstIds>>
+          VertexID beforeFirstDst = "";
+          for (auto& el : result) {
+            auto curFirstDst = el.first;
+            if (curFirstDst.compare(*iter) > 0) {
+              break;
+            }
+            beforeFirstDst = curFirstDst;
+          }
+          result[beforeFirstDst].emplace(*iter);
+        }
+      }
+      for (auto& el : result) {
+        auto edgeRefKey =
+            NebulaKeyUtils::edgeRefKey(spaceVidLen_, partId, srcId, edgetype, el.first);
+        auto edgeRefVal = NebulaKeyUtils::edgeRefVal(el.second);
+        batchHolder->put(std::move(edgeRefKey), std::move(edgeRefVal));
+      }
+    }
+
+    if (code != nebula::cpp2::ErrorCode::SUCCEEDED) {
+      handleAsync(spaceId_, partId, code);
+      continue;
+    }
+    if (consistOp_) {
+      (*consistOp_)(*batchHolder, nullptr);
+    }
+    auto batch = encodeBatchValue(batchHolder->getBatch());
+    DCHECK(!batch.empty());
+    env_->kvstore_->asyncAppendBatch(
+        spaceId_, partId, std::move(batch), [partId, this](nebula::cpp2::ErrorCode retCode) {
+          handleAsync(spaceId_, partId, retCode);
+        });
+  }
+}
+
+ErrorOr<nebula::cpp2::ErrorCode, std::map<VertexID, std::set<VertexID>>>
+AddEdgesProcessor::getLastestEdgeRef(PartitionID partId, VertexID& srcId, EdgeType type) {
+  auto edgeRefPrefix = NebulaKeyUtils::edgeRefPrefix(spaceVidLen_, partId, srcId, type);
+  std::unique_ptr<kvstore::KVIterator> edgeIter;
+  auto ret = env_->kvstore_->prefix(spaceId_, partId, edgeRefPrefix, &edgeIter);
+  if (ret != nebula::cpp2::ErrorCode::SUCCEEDED) {
+    LOG(ERROR) << "Get edge ref key failed";
+    return ret;
+  }
+  std::map<VertexID, std::set<VertexID>> result;
+  while (edgeIter && edgeIter->valid()) {
+    auto key = edgeIter->key();
+    auto dstIdInKey = NebulaKeyUtils::parseEdgeRefDstId(spaceVidLen_, key);
+    auto dstIds = NebulaKeyUtils::parseEdgeRefVal(edgeIter->val());
+    result.emplace(dstIdInKey, dstIds);
+    edgeIter->next();
+  }
+  return result;
 }
 
 void AddEdgesProcessor::doProcessWithIndex(const cpp2::AddEdgesRequest& req) {

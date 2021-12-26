@@ -465,6 +465,7 @@ enum ErrorCode {
     E_WRITE_WRITE_CONFLICT            = -3073,
 
     E_CLIENT_SERVER_INCOMPATIBLE      = -3061,
+    E_VERTEX_NOT_FOUND                = -3062,
 
     E_UNKNOWN                         = -8000,
 } (cpp.enum_strict)

@@ -32,6 +32,7 @@ void ChainAddEdgesProcessorLocal::process(const cpp2::AddEdgesRequest& req) {
  * 3. write edge prime(key = edge prime, val = )
  */
 folly::SemiFuture<Code> ChainAddEdgesProcessorLocal::prepareLocal() {
+  /*
   if (FLAGS_trace_toss) {
     uuid_ = ConsistUtil::strUUID();
     readableEdgeDesc_ = makeReadableEdge(req_);
@@ -41,6 +42,51 @@ folly::SemiFuture<Code> ChainAddEdgesProcessorLocal::prepareLocal() {
   }
 
   if (!lockEdges(req_)) {
+    return Code::E_WRITE_WRITE_CONFLICT;
+  }
+
+  auto [pro, fut] = folly::makePromiseContract<Code>();
+  auto primes = makePrime();
+  std::vector<kvstore::KV> debugPrimes;
+  if (FLAGS_trace_toss) {
+    debugPrimes = primes;
+  }
+
+  erasePrime();
+  env_->kvstore_->asyncMultiPut(
+      spaceId_,
+      localPartId_,
+      std::move(primes),
+      [p = std::move(pro), debugPrimes, this](auto rc) mutable {
+        if (rc == nebula::cpp2::ErrorCode::SUCCEEDED) {
+          primeInserted_ = true;
+          if (FLAGS_trace_toss) {
+            for (auto& kv : debugPrimes) {
+              VLOG(1) << uuid_ << " put prime " << folly::hexlify(kv.first);
+            }
+          }
+        } else {
+          LOG(WARNING) << uuid_ << "kvstore err: " << apache::thrift::util::enumNameSafe(rc);
+        }
+
+        p.setValue(rc);
+      });
+  return std::move(fut);
+  */
+  if (FLAGS_trace_toss) {
+    uuid_ = ConsistUtil::strUUID();
+    readableEdgeDesc_ = makeReadableEdge(req_);
+    if (!readableEdgeDesc_.empty()) {
+      uuid_.append(" ").append(readableEdgeDesc_);
+    }
+  }
+
+  // 1) lock src vid  and check src vid using vertexRef
+  auto ret = lockSrcIdEdges(req_);
+  if (!nebula::ok(ret)) {
+    return nebula::error(ret);
+  }
+  if (!nebula::value(ret)) {
     return Code::E_WRITE_WRITE_CONFLICT;
   }
 
@@ -329,6 +375,7 @@ void ChainAddEdgesProcessorLocal::eraseDoublePrime() {
   }
 }
 
+/*
 bool ChainAddEdgesProcessorLocal::lockEdges(const cpp2::AddEdgesRequest& req) {
   auto partId = req.get_parts().begin()->first;
   auto* lockCore = env_->txnMan_->getLockCore(req.get_space_id(), partId);
@@ -341,6 +388,33 @@ bool ChainAddEdgesProcessorLocal::lockEdges(const cpp2::AddEdgesRequest& req) {
     keys.emplace_back(ConsistUtil::edgeKey(spaceVidLen_, partId, edge.get_key()));
   }
   lk_ = std::make_unique<TransactionManager::LockGuard>(lockCore, keys);
+  return lk_->isLocked();
+}
+*/
+
+ErrorOr<nebula::cpp2::ErrorCode, bool> ChainAddEdgesProcessorLocal::lockSrcIdEdges(
+    const cpp2::AddEdgesRequest& req) {
+  auto partId = req.get_parts().begin()->first;
+
+  std::vector<VEMLI> keys;
+  for (auto& edge : req.get_parts().begin()->second) {
+    auto srcId = edge.get_key().get_src().getStr();
+
+    // 1）Use vertexref to check if the vertex exists
+    auto key = NebulaKeyUtils::vertexRefKey(spaceVidLen_, partId, srcId);
+    std::string val;
+    auto ret = env_->kvstore_->get(spaceId_, partId, key, &val);
+    if (ret != nebula::cpp2::ErrorCode::SUCCEEDED) {
+      if (ret == nebula::cpp2::ErrorCode::E_KEY_NOT_FOUND) {
+        LOG(ERROR) << "Space " << spaceId_ << ", vid is " << srcId << " not exists.";
+        ret = nebula::cpp2::ErrorCode::E_VERTEX_NOT_FOUND;
+      }
+      return ret;
+    }
+    keys.emplace_back(spaceId_, partId, srcId);
+  }
+  // 2) SrcId of the output edge add memory lock
+  lk_ = std::make_unique<nebula::MemoryLockGuard<VEMLI>>(env_->verticeEdgesML_.get(), keys);
   return lk_->isLocked();
 }
 

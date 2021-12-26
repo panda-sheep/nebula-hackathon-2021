@@ -46,3 +46,5 @@ DEFINE_bool(query_concurrently,
             false,
             "whether to run query of each part concurrently, only lookup and "
             "go are supported");
+
+DEFINE_uint32(max_edge_in_ref, 50, "Max edge number in edge ref");

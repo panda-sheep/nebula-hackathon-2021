@@ -30,39 +30,59 @@ namespace {
  **************************************/
 class RocksWriteBatch : public WriteBatch {
  private:
+  // Store ordinary data
   rocksdb::WriteBatch batch_;
+  // Store ref data
+  rocksdb::WriteBatch refbatch_;
 
  public:
-  RocksWriteBatch() : batch_(FLAGS_rocksdb_batch_size) {}
+  RocksWriteBatch() : batch_(FLAGS_rocksdb_batch_size), refbatch_(FLAGS_rocksdb_batch_size) {}
 
   virtual ~RocksWriteBatch() = default;
 
   nebula::cpp2::ErrorCode put(folly::StringPiece key, folly::StringPiece value) override {
-    if (batch_.Put(toSlice(key), toSlice(value)).ok()) {
-      return nebula::cpp2::ErrorCode::SUCCEEDED;
+    if (nebula::NebulaKeyUtils::isVertexRef(key) || nebula::NebulaKeyUtils::isEdgeRef(key)) {
+      if (!refbatch_.Put(toSlice(key), toSlice(value)).ok()) {
+        return nebula::cpp2::ErrorCode::E_UNKNOWN;
+      }
     } else {
-      return nebula::cpp2::ErrorCode::E_UNKNOWN;
+      if (!batch_.Put(toSlice(key), toSlice(value)).ok()) {
+        return nebula::cpp2::ErrorCode::E_UNKNOWN;
+      }
     }
+    return nebula::cpp2::ErrorCode::SUCCEEDED;
   }
 
   nebula::cpp2::ErrorCode remove(folly::StringPiece key) override {
-    if (batch_.Delete(toSlice(key)).ok()) {
-      return nebula::cpp2::ErrorCode::SUCCEEDED;
+    if (nebula::NebulaKeyUtils::isVertexRef(key) || nebula::NebulaKeyUtils::isEdgeRef(key)) {
+      if (!refbatch_.Delete(toSlice(key)).ok()) {
+        return nebula::cpp2::ErrorCode::E_UNKNOWN;
+      }
     } else {
-      return nebula::cpp2::ErrorCode::E_UNKNOWN;
+      if (!batch_.Delete(toSlice(key)).ok()) {
+        return nebula::cpp2::ErrorCode::E_UNKNOWN;
+      }
     }
+    return nebula::cpp2::ErrorCode::SUCCEEDED;
   }
 
   // Remove all keys in the range [start, end)
   nebula::cpp2::ErrorCode removeRange(folly::StringPiece start, folly::StringPiece end) override {
-    if (batch_.DeleteRange(toSlice(start), toSlice(end)).ok()) {
-      return nebula::cpp2::ErrorCode::SUCCEEDED;
+    if (nebula::NebulaKeyUtils::isVertexRef(start) || nebula::NebulaKeyUtils::isEdgeRef(start)) {
+      if (!refbatch_.DeleteRange(toSlice(start), toSlice(end)).ok()) {
+        return nebula::cpp2::ErrorCode::E_UNKNOWN;
+      }
     } else {
-      return nebula::cpp2::ErrorCode::E_UNKNOWN;
+      if (!batch_.DeleteRange(toSlice(start), toSlice(end)).ok()) {
+        return nebula::cpp2::ErrorCode::E_UNKNOWN;
+      }
     }
+    return nebula::cpp2::ErrorCode::SUCCEEDED;
   }
 
   rocksdb::WriteBatch* data() { return &batch_; }
+
+  rocksdb::WriteBatch* refdata() { return &refbatch_; }
 };
 
 }  // Anonymous namespace
@@ -103,31 +123,74 @@ RocksEngine::RocksEngine(GraphSpaceID spaceId,
     LOG(FATAL) << path << " is not directory";
   }
 
-  openBackupEngine(spaceId);
-
-  rocksdb::Options options;
-  rocksdb::DB* db = nullptr;
-  rocksdb::Status status = initRocksdbOptions(options, spaceId, vIdLen);
-  CHECK(status.ok()) << status.ToString();
-  if (mergeOp != nullptr) {
-    options.merge_operator = mergeOp;
-  }
-  if (cfFactory != nullptr) {
-    options.compaction_filter_factory = cfFactory;
+  auto refpath = folly::stringPrintf("%s/refdata", dataPath_.c_str());
+  if (FileUtils::fileType(refpath.c_str()) == FileType::NOTEXIST) {
+    if (readonly) {
+      LOG(FATAL) << "Ref path " << refpath << " not exist";
+    } else {
+      if (!FileUtils::makeDir(refpath)) {
+        LOG(FATAL) << "makeDir " << refpath << " failed";
+      }
+    }
   }
 
-  if (readonly) {
-    status = rocksdb::DB::OpenForReadOnly(options, path, &db);
-  } else {
-    status = rocksdb::DB::Open(options, path, &db);
+  if (FileUtils::fileType(refpath.c_str()) != FileType::DIRECTORY) {
+    LOG(FATAL) << refpath << " is not directory";
   }
-  CHECK(status.ok()) << status.ToString();
-  db_.reset(db);
-  extractorLen_ = sizeof(PartitionID) + vIdLen;
-  partsNum_ = allParts().size();
-  LOG(INFO) << "open rocksdb on " << path;
 
-  backup();
+  // Normal rocksdb
+  {
+    openBackupEngine(spaceId);
+
+    rocksdb::Options options;
+    rocksdb::DB* db = nullptr;
+    rocksdb::Status status = initRocksdbOptions(options, spaceId, vIdLen);
+    CHECK(status.ok()) << status.ToString();
+    if (mergeOp != nullptr) {
+      options.merge_operator = mergeOp;
+    }
+    if (cfFactory != nullptr) {
+      options.compaction_filter_factory = cfFactory;
+    }
+
+    if (readonly) {
+      status = rocksdb::DB::OpenForReadOnly(options, path, &db);
+    } else {
+      status = rocksdb::DB::Open(options, path, &db);
+    }
+    CHECK(status.ok()) << status.ToString();
+    db_.reset(db);
+    extractorLen_ = sizeof(PartitionID) + vIdLen;
+    partsNum_ = allParts().size();
+    LOG(INFO) << "open data rocksdb on " << path;
+    backup();
+  }
+
+  // Ref rocksdb
+  {
+    openBackupRefEngine();
+
+    rocksdb::Options options;
+    rocksdb::DB* db = nullptr;
+    rocksdb::Status status = initRefRocksdbOptions(options, spaceId, vIdLen);
+    CHECK(status.ok()) << status.ToString();
+    if (mergeOp != nullptr) {
+      options.merge_operator = mergeOp;
+    }
+    if (cfFactory != nullptr) {
+      options.compaction_filter_factory = cfFactory;
+    }
+
+    if (readonly) {
+      status = rocksdb::DB::OpenForReadOnly(options, refpath, &db);
+    } else {
+      status = rocksdb::DB::Open(options, refpath, &db);
+    }
+    CHECK(status.ok()) << status.ToString();
+    refdb_.reset(db);
+    LOG(INFO) << "open ref rocksdb on " << refpath;
+    backupRef();
+  }
 }
 
 void RocksEngine::stop() {
@@ -135,6 +198,11 @@ void RocksEngine::stop() {
     // Because we trigger compaction in WebService, we need to stop all
     // background work before we stop HttpServer.
     rocksdb::CancelAllBackgroundWork(db_.get(), true);
+  }
+  if (refdb_) {
+    // Because we trigger compaction in WebService, we need to stop all
+    // background work before we stop HttpServer.
+    rocksdb::CancelAllBackgroundWork(refdb_.get(), true);
   }
 }
 
@@ -151,19 +219,50 @@ nebula::cpp2::ErrorCode RocksEngine::commitBatchWrite(std::unique_ptr<WriteBatch
   options.sync = sync;
   options.no_slowdown = !wait;
   auto* b = static_cast<RocksWriteBatch*>(batch.get());
-  rocksdb::Status status = db_->Write(options, b->data());
-  if (status.ok()) {
-    return nebula::cpp2::ErrorCode::SUCCEEDED;
-  } else if (!wait && status.IsIncomplete()) {
-    return nebula::cpp2::ErrorCode::E_WRITE_STALLED;
+  auto dataCount = b->data()->Count();
+  auto refCount = b->refdata()->Count();
+
+  rocksdb::Status status;
+  rocksdb::Status refStatus;
+  if (dataCount && refCount) {
+    status = db_->Write(options, b->data());
+    if (status.ok()) {
+      refStatus = refdb_->Write(options, b->refdata());
+      if (refStatus.ok()) {
+        return nebula::cpp2::ErrorCode::SUCCEEDED;
+      }
+      LOG(ERROR) << "Write into ref rocksdb failed because of " << refStatus.ToString();
+      return nebula::cpp2::ErrorCode::E_UNKNOWN;
+    }
+    // For data consistency, ref rocksdb is not written here, and an error is reported directly
+    LOG(ERROR) << "Write into data rocksdb failed because of " << status.ToString();
+    return nebula::cpp2::ErrorCode::E_UNKNOWN;
+  } else if (dataCount) {
+    status = db_->Write(options, b->data());
+    if (status.ok()) {
+      return nebula::cpp2::ErrorCode::SUCCEEDED;
+    }
+    LOG(ERROR) << "Write into data rocksdb failed because of " << status.ToString();
+    return nebula::cpp2::ErrorCode::E_UNKNOWN;
+  } else if (refCount) {
+    refStatus = refdb_->Write(options, b->refdata());
+    if (refStatus.ok()) {
+      return nebula::cpp2::ErrorCode::SUCCEEDED;
+    }
+    LOG(ERROR) << "Write into ref rocksdb failed because of " << refStatus.ToString();
+    return nebula::cpp2::ErrorCode::E_UNKNOWN;
   }
-  LOG(ERROR) << "Write into rocksdb failed because of " << status.ToString();
-  return nebula::cpp2::ErrorCode::E_UNKNOWN;
+  return nebula::cpp2::ErrorCode::SUCCEEDED;
 }
 
 nebula::cpp2::ErrorCode RocksEngine::get(const std::string& key, std::string* value) {
   rocksdb::ReadOptions options;
-  rocksdb::Status status = db_->Get(options, rocksdb::Slice(key), value);
+  rocksdb::Status status;
+  if (nebula::NebulaKeyUtils::isVertexRef(key) || nebula::NebulaKeyUtils::isEdgeRef(key)) {
+    status = refdb_->Get(options, rocksdb::Slice(key), value);
+  } else {
+    status = db_->Get(options, rocksdb::Slice(key), value);
+  }
   if (status.ok()) {
     return nebula::cpp2::ErrorCode::SUCCEEDED;
   } else if (status.IsNotFound()) {
@@ -175,11 +274,18 @@ nebula::cpp2::ErrorCode RocksEngine::get(const std::string& key, std::string* va
   }
 }
 
+// The keys in multiGet can only be of one type,
+// it is currently assumed to be data type
+// not support ref key
 std::vector<Status> RocksEngine::multiGet(const std::vector<std::string>& keys,
                                           std::vector<std::string>* values) {
   rocksdb::ReadOptions options;
   std::vector<rocksdb::Slice> slices;
   for (size_t index = 0; index < keys.size(); index++) {
+    if (nebula::NebulaKeyUtils::isVertexRef(keys[index]) ||
+        nebula::NebulaKeyUtils::isEdgeRef(keys[index])) {
+      LOG(FATAL) << "multiget does not support ref key";
+    }
     slices.emplace_back(keys[index]);
   }
 
@@ -202,7 +308,12 @@ nebula::cpp2::ErrorCode RocksEngine::range(const std::string& start,
                                            std::unique_ptr<KVIterator>* storageIter) {
   rocksdb::ReadOptions options;
   options.total_order_seek = FLAGS_enable_rocksdb_prefix_filtering;
-  rocksdb::Iterator* iter = db_->NewIterator(options);
+  rocksdb::Iterator* iter;
+  if (nebula::NebulaKeyUtils::isVertexRef(start) || nebula::NebulaKeyUtils::isEdgeRef(start)) {
+    iter = refdb_->NewIterator(options);
+  } else {
+    iter = db_->NewIterator(options);
+  }
   if (iter) {
     iter->Seek(rocksdb::Slice(start));
   }
@@ -225,27 +336,38 @@ nebula::cpp2::ErrorCode RocksEngine::prefixWithExtractor(const std::string& pref
                                                          std::unique_ptr<KVIterator>* storageIter) {
   rocksdb::ReadOptions options;
   options.prefix_same_as_start = true;
-  rocksdb::Iterator* iter = db_->NewIterator(options);
+  rocksdb::Iterator* iter;
+  if (nebula::NebulaKeyUtils::isVertexRef(prefix) || nebula::NebulaKeyUtils::isEdgeRef(prefix)) {
+    iter = refdb_->NewIterator(options);
+  } else {
+    iter = db_->NewIterator(options);
+  }
   if (iter) {
     iter->Seek(rocksdb::Slice(prefix));
   }
   storageIter->reset(new RocksPrefixIter(iter, prefix));
   return nebula::cpp2::ErrorCode::SUCCEEDED;
-}
+}  // namespace kvstore
 
 nebula::cpp2::ErrorCode RocksEngine::prefixWithoutExtractor(
     const std::string& prefix, std::unique_ptr<KVIterator>* storageIter) {
   rocksdb::ReadOptions options;
   // prefix_same_as_start is false by default
   options.total_order_seek = FLAGS_enable_rocksdb_prefix_filtering;
-  rocksdb::Iterator* iter = db_->NewIterator(options);
+  rocksdb::Iterator* iter;
+  if (nebula::NebulaKeyUtils::isVertexRef(prefix) || nebula::NebulaKeyUtils::isEdgeRef(prefix)) {
+    iter = refdb_->NewIterator(options);
+  } else {
+    iter = db_->NewIterator(options);
+  }
   if (iter) {
     iter->Seek(rocksdb::Slice(prefix));
   }
   storageIter->reset(new RocksPrefixIter(iter, prefix));
   return nebula::cpp2::ErrorCode::SUCCEEDED;
-}
+}  // namespace kvstore
 
+// not support ref key
 nebula::cpp2::ErrorCode RocksEngine::rangeWithPrefix(const std::string& start,
                                                      const std::string& prefix,
                                                      std::unique_ptr<KVIterator>* storageIter) {
@@ -260,6 +382,7 @@ nebula::cpp2::ErrorCode RocksEngine::rangeWithPrefix(const std::string& start,
   return nebula::cpp2::ErrorCode::SUCCEEDED;
 }
 
+// not support ref key
 nebula::cpp2::ErrorCode RocksEngine::scan(std::unique_ptr<KVIterator>* storageIter) {
   rocksdb::ReadOptions options;
   options.total_order_seek = true;
@@ -272,7 +395,12 @@ nebula::cpp2::ErrorCode RocksEngine::scan(std::unique_ptr<KVIterator>* storageIt
 nebula::cpp2::ErrorCode RocksEngine::put(std::string key, std::string value) {
   rocksdb::WriteOptions options;
   options.disableWAL = FLAGS_rocksdb_disable_wal;
-  rocksdb::Status status = db_->Put(options, key, value);
+  rocksdb::Status status;
+  if (nebula::NebulaKeyUtils::isVertexRef(key) || nebula::NebulaKeyUtils::isEdgeRef(key)) {
+    status = refdb_->Put(options, key, value);
+  } else {
+    status = db_->Put(options, key, value);
+  }
   if (status.ok()) {
     return nebula::cpp2::ErrorCode::SUCCEEDED;
   } else {
@@ -283,52 +411,125 @@ nebula::cpp2::ErrorCode RocksEngine::put(std::string key, std::string value) {
 
 nebula::cpp2::ErrorCode RocksEngine::multiPut(std::vector<KV> keyValues) {
   rocksdb::WriteBatch updates(FLAGS_rocksdb_batch_size);
+  rocksdb::WriteBatch updateRefs(FLAGS_rocksdb_batch_size);
   for (size_t i = 0; i < keyValues.size(); i++) {
-    updates.Put(keyValues[i].first, keyValues[i].second);
+    auto key = keyValues[i].first;
+    if (nebula::NebulaKeyUtils::isVertexRef(key) || nebula::NebulaKeyUtils::isEdgeRef(key)) {
+      updates.Put(key, keyValues[i].second);
+    } else {
+      updates.Put(key, keyValues[i].second);
+    }
   }
   rocksdb::WriteOptions options;
   options.disableWAL = FLAGS_rocksdb_disable_wal;
-  rocksdb::Status status = db_->Write(options, &updates);
-  if (status.ok()) {
-    return nebula::cpp2::ErrorCode::SUCCEEDED;
-  } else {
-    VLOG(3) << "MultiPut Failed: " << status.ToString();
+  auto dataCount = updates.Count();
+  auto refCount = updateRefs.Count();
+  rocksdb::Status status;
+  rocksdb::Status refStatus;
+  if (dataCount && refCount) {
+    status = db_->Write(options, &updates);
+    if (status.ok()) {
+      refStatus = refdb_->Write(options, &updateRefs);
+      if (refStatus.ok()) {
+        return nebula::cpp2::ErrorCode::SUCCEEDED;
+      }
+      LOG(ERROR) << "Write into ref rocksdb multiPut failed because of " << refStatus.ToString();
+      return nebula::cpp2::ErrorCode::E_UNKNOWN;
+    }
+    LOG(ERROR) << "Write into data rocksdb multiPut failed because of " << status.ToString();
+    return nebula::cpp2::ErrorCode::E_UNKNOWN;
+  } else if (dataCount) {
+    status = db_->Write(options, &updates);
+    if (status.ok()) {
+      return nebula::cpp2::ErrorCode::SUCCEEDED;
+    }
+    LOG(ERROR) << "Write into data rocksdb multiPut failed because of " << status.ToString();
+    return nebula::cpp2::ErrorCode::E_UNKNOWN;
+  } else if (refCount) {
+    refStatus = refdb_->Write(options, &updateRefs);
+    if (refStatus.ok()) {
+      return nebula::cpp2::ErrorCode::SUCCEEDED;
+    }
+    LOG(ERROR) << "Write into ref rocksdb multiPut failed because of " << refStatus.ToString();
     return nebula::cpp2::ErrorCode::E_UNKNOWN;
   }
+  return nebula::cpp2::ErrorCode::SUCCEEDED;
 }
 
 nebula::cpp2::ErrorCode RocksEngine::remove(const std::string& key) {
   rocksdb::WriteOptions options;
   options.disableWAL = FLAGS_rocksdb_disable_wal;
-  auto status = db_->Delete(options, key);
+  rocksdb::Status status;
+  if (nebula::NebulaKeyUtils::isVertexRef(key) || nebula::NebulaKeyUtils::isEdgeRef(key)) {
+    status = refdb_->Delete(options, key);
+  } else {
+    status = db_->Delete(options, key);
+  }
   if (status.ok()) {
     return nebula::cpp2::ErrorCode::SUCCEEDED;
   } else {
     VLOG(3) << "Remove Failed: " << key << status.ToString();
     return nebula::cpp2::ErrorCode::E_UNKNOWN;
   }
-}
+}  // namespace kvstore
 
 nebula::cpp2::ErrorCode RocksEngine::multiRemove(std::vector<std::string> keys) {
   rocksdb::WriteBatch deletes(FLAGS_rocksdb_batch_size);
+  rocksdb::WriteBatch deleteRefs(FLAGS_rocksdb_batch_size);
   for (size_t i = 0; i < keys.size(); i++) {
-    deletes.Delete(keys[i]);
+    auto key = keys[i];
+    if (nebula::NebulaKeyUtils::isVertexRef(key) || nebula::NebulaKeyUtils::isEdgeRef(key)) {
+      deleteRefs.Delete(key);
+    } else {
+      deletes.Delete(key);
+    }
   }
   rocksdb::WriteOptions options;
   options.disableWAL = FLAGS_rocksdb_disable_wal;
-  rocksdb::Status status = db_->Write(options, &deletes);
-  if (status.ok()) {
-    return nebula::cpp2::ErrorCode::SUCCEEDED;
-  } else {
-    VLOG(3) << "MultiRemove Failed: " << status.ToString();
+  auto dataCount = deletes.Count();
+  auto refCount = deleteRefs.Count();
+  rocksdb::Status status;
+  rocksdb::Status refStatus;
+  if (dataCount && refCount) {
+    status = refdb_->Write(options, &deleteRefs);
+    if (status.ok()) {
+      refStatus = db_->Write(options, &deletes);
+      if (refStatus.ok()) {
+        return nebula::cpp2::ErrorCode::SUCCEEDED;
+      }
+      LOG(ERROR) << "Write into data rocksdb multiRemove failed because of "
+                 << refStatus.ToString();
+      return nebula::cpp2::ErrorCode::E_UNKNOWN;
+    }
+    LOG(ERROR) << "Write into ref rocksdb multiRemove failed because of " << status.ToString();
+    return nebula::cpp2::ErrorCode::E_UNKNOWN;
+  } else if (dataCount) {
+    status = db_->Write(options, &deletes);
+    if (status.ok()) {
+      return nebula::cpp2::ErrorCode::SUCCEEDED;
+    }
+    LOG(ERROR) << "Write into data rocksdb multiRemove failed because of " << status.ToString();
+    return nebula::cpp2::ErrorCode::E_UNKNOWN;
+  } else if (refCount) {
+    refStatus = refdb_->Write(options, &deleteRefs);
+    if (refStatus.ok()) {
+      return nebula::cpp2::ErrorCode::SUCCEEDED;
+    }
+    LOG(ERROR) << "Write into ref rocksdb multiRemove failed because of " << refStatus.ToString();
     return nebula::cpp2::ErrorCode::E_UNKNOWN;
   }
+  return nebula::cpp2::ErrorCode::SUCCEEDED;
 }
 
 nebula::cpp2::ErrorCode RocksEngine::removeRange(const std::string& start, const std::string& end) {
   rocksdb::WriteOptions options;
   options.disableWAL = FLAGS_rocksdb_disable_wal;
-  auto status = db_->DeleteRange(options, db_->DefaultColumnFamily(), start, end);
+  rocksdb::Status status;
+  if (nebula::NebulaKeyUtils::isVertexRef(start) || nebula::NebulaKeyUtils::isEdgeRef(start)) {
+    status = refdb_->DeleteRange(options, refdb_->DefaultColumnFamily(), start, end);
+  } else {
+    status = db_->DeleteRange(options, db_->DefaultColumnFamily(), start, end);
+  }
   if (status.ok()) {
     return nebula::cpp2::ErrorCode::SUCCEEDED;
   } else {
@@ -448,9 +649,14 @@ nebula::cpp2::ErrorCode RocksEngine::compact() {
   options.target_level = FLAGS_rocksdb_compact_target_level;
   rocksdb::Status status = db_->CompactRange(options, nullptr, nullptr);
   if (status.ok()) {
+    status = refdb_->CompactRange(options, nullptr, nullptr);
+    if (!status.ok()) {
+      LOG(ERROR) << "CompactAll ref rocksdb Failed: " << status.ToString();
+      return nebula::cpp2::ErrorCode::E_UNKNOWN;
+    }
     return nebula::cpp2::ErrorCode::SUCCEEDED;
   } else {
-    LOG(ERROR) << "CompactAll Failed: " << status.ToString();
+    LOG(ERROR) << "CompactAll data rocksdb Failed: " << status.ToString();
     return nebula::cpp2::ErrorCode::E_UNKNOWN;
   }
 }
@@ -459,9 +665,14 @@ nebula::cpp2::ErrorCode RocksEngine::flush() {
   rocksdb::FlushOptions options;
   rocksdb::Status status = db_->Flush(options);
   if (status.ok()) {
+    status = refdb_->Flush(options);
+    if (!status.ok()) {
+      LOG(ERROR) << "Flush ref rocksdb Failed: " << status.ToString();
+      return nebula::cpp2::ErrorCode::E_UNKNOWN;
+    }
     return nebula::cpp2::ErrorCode::SUCCEEDED;
   } else {
-    LOG(ERROR) << "Flush Failed: " << status.ToString();
+    LOG(ERROR) << "Flush data rocksdb Failed: " << status.ToString();
     return nebula::cpp2::ErrorCode::E_UNKNOWN;
   }
 }
@@ -473,6 +684,21 @@ nebula::cpp2::ErrorCode RocksEngine::backup() {
   LOG(INFO) << "begin to backup space " << spaceId_ << " on path " << backupPath_;
   bool flushBeforeBackup = true;
   auto status = backupDb_->CreateNewBackup(db_.get(), flushBeforeBackup);
+  if (status.ok()) {
+    return nebula::cpp2::ErrorCode::SUCCEEDED;
+  } else {
+    LOG(ERROR) << "backup failed: " << status.ToString();
+    return nebula::cpp2::ErrorCode::E_BACKUP_FAILED;
+  }
+}
+
+nebula::cpp2::ErrorCode RocksEngine::backupRef() {
+  if (!backupRefDb_) {
+    return nebula::cpp2::ErrorCode::SUCCEEDED;
+  }
+  LOG(INFO) << "begin to backup space " << spaceId_ << " on path " << backupRefPath_;
+  bool flushBeforeBackup = true;
+  auto status = backupRefDb_->CreateNewBackup(refdb_.get(), flushBeforeBackup);
   if (status.ok()) {
     return nebula::cpp2::ErrorCode::SUCCEEDED;
   } else {
@@ -521,6 +747,40 @@ void RocksEngine::openBackupEngine(GraphSpaceID spaceId) {
               << ", backup path " << backupPath_ << ", wal path " << walDir << ", data path "
               << dataPath;
   }
+}
+
+void RocksEngine::openBackupRefEngine() {
+  // backup ref rocksdb "PlainTable
+  backupRefPath_ = folly::stringPrintf("%s/refrocksdb_backup", dataPath_.c_str());
+  if (FileUtils::fileType(backupRefPath_.c_str()) == FileType::NOTEXIST) {
+    if (!FileUtils::makeDir(backupRefPath_)) {
+      LOG(FATAL) << "makeDir " << backupRefPath_ << " failed";
+    }
+  }
+  rocksdb::BackupEngine* backupDb;
+  rocksdb::BackupableDBOptions backupOptions(backupRefPath_);
+  backupOptions.backup_log_files = false;
+  auto status = rocksdb::BackupEngine::Open(rocksdb::Env::Default(), backupOptions, &backupDb);
+  CHECK(status.ok()) << status.ToString();
+  backupRefDb_.reset(backupDb);
+  LOG(INFO) << "open plain table backup engine on " << backupRefPath_;
+
+  std::string dataPath = folly::stringPrintf("%s/refdata", dataPath_.c_str());
+  auto walDir = dataPath;
+
+  rocksdb::RestoreOptions restoreOptions;
+  restoreOptions.keep_log_files = true;
+  status = backupRefDb_->RestoreDBFromLatestBackup(dataPath, walDir, restoreOptions);
+  LOG(INFO) << "try to restore from backup path " << backupRefPath_;
+  if (status.IsNotFound()) {
+    LOG(WARNING) << "no valid backup found";
+    return;
+  } else if (!status.ok()) {
+    LOG(FATAL) << status.ToString();
+  }
+  LOG(INFO) << "restore from latest backup successfully"
+            << ", backup path " << backupRefPath_ << ", wal path " << walDir << ", data path "
+            << dataPath;
 }
 
 nebula::cpp2::ErrorCode RocksEngine::createCheckpoint(const std::string& name) {

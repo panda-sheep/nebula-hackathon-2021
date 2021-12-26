@@ -32,6 +32,8 @@ class AddEdgesProcessor : public BaseProcessor<cpp2::ExecResponse> {
 
   void doProcessWithIndex(const cpp2::AddEdgesRequest& req);
 
+  void doProcessWithRef(const cpp2::AddEdgesRequest& req);
+
  private:
   AddEdgesProcessor(StorageEnv* env, const ProcessorCounters* counters)
       : BaseProcessor<cpp2::ExecResponse>(env, counters) {}
@@ -46,6 +48,9 @@ class AddEdgesProcessor : public BaseProcessor<cpp2::ExecResponse> {
                                      RowReader* reader,
                                      const folly::StringPiece& rawKey,
                                      std::shared_ptr<nebula::meta::cpp2::IndexItem> index);
+
+  ErrorOr<nebula::cpp2::ErrorCode, std::map<VertexID, std::set<VertexID>>> getLastestEdgeRef(
+      PartitionID partId, VertexID& srcId, EdgeType type);
 
  private:
   GraphSpaceID spaceId_;

@@ -16,6 +16,7 @@
 #include "storage/mutate/DeleteVerticesProcessor.h"
 #include "storage/mutate/UpdateEdgeProcessor.h"
 #include "storage/mutate/UpdateVertexProcessor.h"
+#include "storage/query/GetDegreeProcessor.h"
 #include "storage/query/GetNeighborsProcessor.h"
 #include "storage/query/GetPropProcessor.h"
 #include "storage/query/ScanEdgeProcessor.h"
@@ -57,6 +58,7 @@ GraphStorageServiceHandler::GraphStorageServiceHandler(StorageEnv* env) : env_(e
   kUpdateEdgeCounters.init("update_edge");
   kGetNeighborsCounters.init("get_neighbors");
   kGetPropCounters.init("get_prop");
+  kGetDegreeCounters.init("get_degree");
   kLookupCounters.init("lookup");
   kScanVertexCounters.init("scan_vertex");
   kScanEdgeCounters.init("scan_edge");
@@ -126,6 +128,12 @@ folly::Future<cpp2::GetNeighborsResponse> GraphStorageServiceHandler::future_get
 folly::Future<cpp2::GetPropResponse> GraphStorageServiceHandler::future_getProps(
     const cpp2::GetPropRequest& req) {
   auto* processor = GetPropProcessor::instance(env_, &kGetPropCounters, readerPool_.get());
+  RETURN_FUTURE(processor);
+}
+
+folly::Future<cpp2::GetDegreeResponse> GraphStorageServiceHandler::future_getDegree(
+    const cpp2::GetDegreeRequest& req) {
+  auto* processor = GetDegreeProcessor::instance(env_, &kGetDegreeCounters, readerPool_.get());
   RETURN_FUTURE(processor);
 }
 

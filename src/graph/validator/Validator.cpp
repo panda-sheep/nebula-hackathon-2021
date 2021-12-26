@@ -18,6 +18,8 @@
 #include "graph/validator/DownloadValidator.h"
 #include "graph/validator/ExplainValidator.h"
 #include "graph/validator/FetchEdgesValidator.h"
+#include "graph/validator/FetchIndegreeValidator.h"
+#include "graph/validator/FetchOutdegreeValidator.h"
 #include "graph/validator/FetchVerticesValidator.h"
 #include "graph/validator/FindPathValidator.h"
 #include "graph/validator/GetSubgraphValidator.h"
@@ -140,6 +142,10 @@ std::unique_ptr<Validator> Validator::makeValidator(Sentence* sentence, QueryCon
       return std::make_unique<FetchVerticesValidator>(sentence, context);
     case Sentence::Kind::kFetchEdges:
       return std::make_unique<FetchEdgesValidator>(sentence, context);
+    case Sentence::Kind::kFetchOutdegree:
+      return std::make_unique<FetchOutdegreeValidator>(sentence, context);
+    case Sentence::Kind::kFetchIndegree:
+      return std::make_unique<FetchIndegreeValidator>(sentence, context);
     case Sentence::Kind::kCreateSnapshot:
       return std::make_unique<CreateSnapshotValidator>(sentence, context);
     case Sentence::Kind::kDropSnapshot:

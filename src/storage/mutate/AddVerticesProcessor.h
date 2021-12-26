@@ -30,6 +30,8 @@ class AddVerticesProcessor : public BaseProcessor<cpp2::ExecResponse> {
 
   void doProcessWithIndex(const cpp2::AddVerticesRequest& req);
 
+  void doProcessWithRef(const cpp2::AddVerticesRequest& req);
+
  private:
   AddVerticesProcessor(StorageEnv* env, const ProcessorCounters* counters)
       : BaseProcessor<cpp2::ExecResponse>(env, counters) {}
@@ -42,6 +44,9 @@ class AddVerticesProcessor : public BaseProcessor<cpp2::ExecResponse> {
                                      const VertexID& vId,
                                      RowReader* reader,
                                      std::shared_ptr<nebula::meta::cpp2::IndexItem> index);
+
+  ErrorOr<nebula::cpp2::ErrorCode, std::string> findVertexRef(PartitionID partId,
+                                                              const VertexID& vId);
 
  private:
   GraphSpaceID spaceId_;

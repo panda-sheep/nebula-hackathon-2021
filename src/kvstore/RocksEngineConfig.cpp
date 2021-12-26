@@ -333,6 +333,94 @@ rocksdb::Status initRocksdbOptions(rocksdb::Options& baseOpts,
   return s;
 }
 
+rocksdb::Status initRefRocksdbOptions(rocksdb::Options& baseOpts,
+                                      GraphSpaceID spaceId,
+                                      int32_t vidLen) {
+  rocksdb::Status s;
+  rocksdb::DBOptions dbOpts;
+  rocksdb::ColumnFamilyOptions cfOpts;
+  rocksdb::BlockBasedTableOptions bbtOpts;
+
+  // DBOptions
+  std::unordered_map<std::string, std::string> dbOptsMap;
+  if (!loadOptionsMap(dbOptsMap, FLAGS_rocksdb_db_options)) {
+    return rocksdb::Status::InvalidArgument();
+  }
+  s = GetDBOptionsFromMap(rocksdb::DBOptions(), dbOptsMap, &dbOpts, true);
+  if (!s.ok()) {
+    return s;
+  }
+  std::shared_ptr<rocksdb::Statistics> stats = getDBStatistics();
+  if (stats) {
+    dbOpts.statistics = std::move(stats);
+    dbOpts.stats_dump_period_sec = 0;  // exposing statistics ourself
+  }
+  dbOpts.listeners.emplace_back(new EventListener());
+
+  // if rocksdb_wal_dir is set, specify it to rocksdb
+  if (!FLAGS_rocksdb_wal_dir.empty()) {
+    auto walDir = folly::stringPrintf("%s/rocksdb_wal/%d", FLAGS_rocksdb_wal_dir.c_str(), spaceId);
+    if (fs::FileUtils::fileType(walDir.c_str()) == fs::FileType::NOTEXIST) {
+      if (!fs::FileUtils::makeDir(walDir)) {
+        LOG(FATAL) << "makeDir " << walDir << " failed";
+      }
+    }
+    LOG(INFO) << "set rocksdb wal of space " << spaceId << " to " << walDir;
+    dbOpts.wal_dir = walDir;
+  }
+
+  // ColumnFamilyOptions
+  std::unordered_map<std::string, std::string> cfOptsMap;
+  if (!loadOptionsMap(cfOptsMap, FLAGS_rocksdb_column_family_options)) {
+    return rocksdb::Status::InvalidArgument();
+  }
+  s = GetColumnFamilyOptionsFromMap(rocksdb::ColumnFamilyOptions(), cfOptsMap, &cfOpts, true);
+  if (!s.ok()) {
+    return s;
+  }
+
+  baseOpts = rocksdb::Options(dbOpts, cfOpts);
+
+  s = initRocksdbCompression(baseOpts);
+  if (!s.ok()) {
+    return s;
+  }
+
+  s = initRocksdbKVSeparation(baseOpts);
+  if (!s.ok()) {
+    return s;
+  }
+
+  if (FLAGS_num_compaction_threads > 0) {
+    static std::shared_ptr<rocksdb::ConcurrentTaskLimiter> compaction_thread_limiter{
+        rocksdb::NewConcurrentTaskLimiter("compaction", FLAGS_num_compaction_threads)};
+    baseOpts.compaction_thread_limiter = compaction_thread_limiter;
+  }
+  if (FLAGS_rocksdb_rate_limit > 0) {
+    static std::shared_ptr<rocksdb::RateLimiter> rate_limiter{
+        rocksdb::NewGenericRateLimiter(FLAGS_rocksdb_rate_limit * 1024 * 1024)};
+    baseOpts.rate_limiter = rate_limiter;
+  }
+
+  size_t prefixLength = sizeof(PartitionID) + vidLen;
+  // "PlainTable"
+  // wal_dir need to be specified by rocksdb_wal_dir.
+  //
+  // WAL_ttl_seconds is 0 by default in rocksdb, which will check every 10
+  // mins, so rocksdb_backup_interval_secs is set to half of WAL_ttl_seconds
+  // by default. WAL_ttl_seconds and rocksdb_backup_interval_secs need to be
+  // modify together if necessary
+  FLAGS_rocksdb_disable_wal = false;
+  if (!FLAGS_enable_rocksdb_prefix_filtering) {
+    return rocksdb::Status::InvalidArgument("PlainTable should use prefix bloom filter");
+  }
+  baseOpts.prefix_extractor.reset(rocksdb::NewCappedPrefixTransform(prefixLength));
+  baseOpts.table_factory.reset(rocksdb::NewPlainTableFactory());
+  baseOpts.create_if_missing = true;
+
+  return s;
+}
+
 bool loadOptionsMap(std::unordered_map<std::string, std::string>& map, const std::string& gflags) {
   conf::Configuration conf;
   auto status = conf.parseFromString(gflags);

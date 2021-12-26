@@ -108,6 +108,46 @@ StorageRpcRespFuture<cpp2::GetNeighborsResponse> StorageClient::getNeighbors(
       });
 }
 
+folly::Future<StatusOr<storage::cpp2::GetDegreeResponse>> StorageClient::getDegree(
+    const CommonRequestParam& param, Value vertexId, EdgeType edgeType) {
+  auto cbStatus = getIdFromValue(param.space);
+  if (!cbStatus.ok()) {
+    return folly::makeFuture<StatusOr<storage::cpp2::GetDegreeResponse>>(cbStatus.status());
+  }
+
+  std::pair<HostAddr, cpp2::GetDegreeRequest> request;
+
+  DCHECK(!!metaClient_);
+  auto status = metaClient_->partsNum(param.space);
+  if (!status.ok()) {
+    return Status::Error("Space not found, spaceid: %d", param.space);
+  }
+  auto numParts = status.value();
+  status = metaClient_->partId(numParts, std::move(cbStatus).value()(vertexId));
+  if (!status.ok()) {
+    return folly::makeFuture<StatusOr<storage::cpp2::GetDegreeResponse>>(status.status());
+  }
+
+  auto part = status.value();
+  auto host = this->getLeader(param.space, part);
+  if (!host.ok()) {
+    return folly::makeFuture<StatusOr<storage::cpp2::GetDegreeResponse>>(host.status());
+  }
+  request.first = std::move(host).value();
+  cpp2::GetDegreeRequest req;
+  req.set_space_id(param.space);
+  req.set_part_id(part);
+  req.set_vertex_id(vertexId);
+  req.set_edge_type(edgeType);
+
+  request.second = std::move(req);
+
+  return getResponse(param.evb,
+                     std::move(request),
+                     [](cpp2::GraphStorageServiceAsyncClient* client,
+                        const cpp2::GetDegreeRequest& r) { return client->future_getDegree(r); });
+}
+
 StorageRpcRespFuture<cpp2::ExecResponse> StorageClient::addVertices(
     const CommonRequestParam& param,
     std::vector<cpp2::NewVertex> vertices,

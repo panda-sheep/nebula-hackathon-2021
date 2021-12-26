@@ -200,6 +200,8 @@ class RocksEngine : public KVEngine {
 
   nebula::cpp2::ErrorCode backup() override;
 
+  nebula::cpp2::ErrorCode backupRef() override;
+
   /*********************
    * Checkpoint operation
    ********************/
@@ -215,13 +217,33 @@ class RocksEngine : public KVEngine {
 
   void openBackupEngine(GraphSpaceID spaceId);
 
+  void openBackupRefEngine();
+
  private:
   GraphSpaceID spaceId_;
+  // Store ordinary and ref rocksdb data
+  // Ordinary data is the data subdirectory
+  // ref data is refdata subdirectory
   std::string dataPath_;
+
   std::string walPath_;
+
+  // One RocksEngine has two rocksdb's instances
+  // one is to store ordinary data (the default is BlockBasedTable), the other is ref data
+  // (PlainTable)
   std::unique_ptr<rocksdb::DB> db_{nullptr};
+
+  std::unique_ptr<rocksdb::DB> refdb_{nullptr};
+
   std::string backupPath_;
+
+  // Default ref rocksdb backup path
+  std::string backupRefPath_;
+
   std::unique_ptr<rocksdb::BackupEngine> backupDb_{nullptr};
+
+  // Default ref rocksdb backup Db
+  std::unique_ptr<rocksdb::BackupEngine> backupRefDb_{nullptr};
   int32_t partsNum_ = -1;
   size_t extractorLen_;
 };

@@ -63,6 +63,107 @@ void GetNeighborsProcessor::doProcess(const cpp2::GetNeighborsRequest& req) {
     }
   }
 
+  // for GO FROM "11" OVER e2 yield e2._dst;
+  // In this case, we have the greatest advantage
+  // Because it is a pure memory operation
+  // TODO More optimizations, currently only supports one edgetype
+  bool useRef = false;
+  if (tagContext_.propContexts_.empty() && filter_ == nullptr &&
+      edgeContext_.propContexts_.size() == 1 && req.get_parts().size() == 1) {
+    useRef = true;
+    for (auto& elem : edgeContext_.propContexts_) {
+      for (auto& Prop : elem.second) {
+        if (Prop.name_ != kDst) {
+          useRef = false;
+          break;
+        }
+      }
+      if (!useRef) {
+        break;
+      }
+    }
+  }
+
+  // Only read edge_ref key
+  if (useRef) {
+    contexts_.emplace_back(RuntimeContext(planContext_.get()));
+    expCtxs_.emplace_back(StorageExpressionContext(spaceVidLen_, isIntId_));
+    auto context = contexts_.front();
+    auto edgetype = edgeContext_.propContexts_[0].first;
+    std::unordered_set<PartitionID> failedParts;
+    for (const auto& partEntry : req.get_parts()) {
+      auto partId = partEntry.first;
+      for (const auto& row : partEntry.second) {
+        CHECK_GE(row.values.size(), 1);
+        auto vId = row.values[0].getStr();
+
+        if (!NebulaKeyUtils::isValidVidLen(spaceVidLen_, vId)) {
+          LOG(ERROR) << "Space " << spaceId_ << ", vertex length invalid, "
+                     << " space vid len: " << spaceVidLen_ << ",  vid is " << vId;
+          pushResultCode(nebula::cpp2::ErrorCode::E_INVALID_VID, partId);
+          onFinished();
+          return;
+        }
+
+        // 1）Use vertexref to check if the vertex exists
+        auto key = NebulaKeyUtils::vertexRefKey(spaceVidLen_, partId, vId);
+        std::string val;
+        auto ret = env_->kvstore_->get(spaceId_, partId, key, &val);
+        if (ret != nebula::cpp2::ErrorCode::SUCCEEDED) {
+          if (ret == nebula::cpp2::ErrorCode::E_KEY_NOT_FOUND) {
+            LOG(ERROR) << "Space " << spaceId_ << ", vid is " << vId << " not exists.";
+            ret = nebula::cpp2::ErrorCode::E_VERTEX_NOT_FOUND;
+          }
+          pushResultCode(ret, partId);
+          onFinished();
+          return;
+        }
+
+        // the first column of each row would be the vertex id
+        auto edgeRefPrefix = NebulaKeyUtils::edgeRefPrefix(spaceVidLen_, partId, vId, edgetype);
+        std::unique_ptr<kvstore::KVIterator> edgeIter;
+        ret = env_->kvstore_->prefix(spaceId_, partId, edgeRefPrefix, &edgeIter);
+        if (ret != nebula::cpp2::ErrorCode::SUCCEEDED) {
+          LOG(ERROR) << "Get edge ref key failed";
+          pushResultCode(ret, partId);
+          onFinished();
+          return;
+        }
+        std::set<VertexID> result;
+        while (edgeIter && edgeIter->valid()) {
+          auto dstIds = NebulaKeyUtils::parseEdgeRefVal(edgeIter->val());
+          result.insert(dstIds.begin(), dstIds.end());
+          edgeIter->next();
+        }
+        std::vector<Value> rowRet;
+        // vertexId is the first column
+        if (context.isIntId()) {
+          rowRet.emplace_back(*reinterpret_cast<const int64_t*>(vId.data()));
+        } else {
+          rowRet.emplace_back(vId);
+        }
+        // second column is reserved for stat
+        rowRet.emplace_back(Value());
+        rowRet.resize(rowRet.size() + edgeContext_.propContexts_.size() + 1, Value());
+
+        for (auto iter = result.begin(); iter != result.end(); iter++) {
+          nebula::List list;
+          list.emplace_back(*iter);
+          // add edge prop value to the target column
+          if (rowRet[2].empty()) {
+            rowRet[2].setList(nebula::List());
+          }
+          auto& cell = rowRet[2].mutableList();
+          cell.values.emplace_back(std::move(list));
+        }
+        resultDataSet_.rows.emplace_back(std::move(rowRet));
+      }
+    }
+    onProcessFinished();
+    onFinished();
+    return;
+  }
+
   // todo(doodle): specify by each query
   if (!FLAGS_query_concurrently) {
     runInSingleThread(req, limit, random);
@@ -92,8 +193,22 @@ void GetNeighborsProcessor::runInSingleThread(const cpp2::GetNeighborsRequest& r
         return;
       }
 
+      // 1）Use vertexref to check if the vertex exists
+      auto key = NebulaKeyUtils::vertexRefKey(spaceVidLen_, partId, vId);
+      std::string val;
+      auto ret = env_->kvstore_->get(spaceId_, partId, key, &val);
+      if (ret != nebula::cpp2::ErrorCode::SUCCEEDED) {
+        if (ret == nebula::cpp2::ErrorCode::E_KEY_NOT_FOUND) {
+          LOG(ERROR) << "Space " << spaceId_ << ", vid is " << vId << " not exists.";
+          ret = nebula::cpp2::ErrorCode::E_VERTEX_NOT_FOUND;
+        }
+        pushResultCode(ret, partId);
+        onFinished();
+        return;
+      }
+
       // the first column of each row would be the vertex id
-      auto ret = plan.go(partId, vId);
+      ret = plan.go(partId, vId);
       if (ret != nebula::cpp2::ErrorCode::SUCCEEDED) {
         if (failedParts.find(partId) == failedParts.end()) {
           failedParts.emplace(partId);
@@ -164,8 +279,20 @@ folly::Future<std::pair<nebula::cpp2::ErrorCode, PartitionID>> GetNeighborsProce
             return std::make_pair(nebula::cpp2::ErrorCode::E_INVALID_VID, partId);
           }
 
+          // 1）Use vertexref to check if the vertex exists
+          auto key = NebulaKeyUtils::vertexRefKey(spaceVidLen_, partId, vId);
+          std::string val;
+          auto ret = env_->kvstore_->get(spaceId_, partId, key, &val);
+          if (ret != nebula::cpp2::ErrorCode::SUCCEEDED) {
+            if (ret == nebula::cpp2::ErrorCode::E_KEY_NOT_FOUND) {
+              LOG(ERROR) << "Space " << spaceId_ << ", vid is " << vId << " not exists.";
+              ret = nebula::cpp2::ErrorCode::E_VERTEX_NOT_FOUND;
+            }
+            return std::make_pair(ret, partId);
+          }
+
           // the first column of each row would be the vertex id
-          auto ret = plan.go(partId, vId);
+          ret = plan.go(partId, vId);
           if (ret != nebula::cpp2::ErrorCode::SUCCEEDED) {
             return std::make_pair(ret, partId);
           }

@@ -1350,6 +1350,61 @@ class AppendVertices final : public GetVertices {
 
   Expression* vFilter_;
 };
+
+class GetOutdegree final : public SingleDependencyNode {
+ public:
+  static GetOutdegree* make(
+      QueryContext* qctx, PlanNode* input, GraphSpaceID spaceId, Value vid, EdgeType edgeType) {
+    return qctx->objPool()->add(new GetOutdegree(qctx, input, spaceId, std::move(vid), edgeType));
+  }
+
+  const Value& getVId() const { return vId_; }
+
+  int64_t getEdgeType() const { return edgeType_; }
+
+  GraphSpaceID getSpaceId() const { return spaceId_; }
+
+ private:
+  GetOutdegree(
+      QueryContext* qctx, PlanNode* input, GraphSpaceID spaceId, Value vId, EdgeType edgeType)
+      : SingleDependencyNode(qctx, Kind::kGetOutdegree, input),
+        spaceId_(spaceId),
+        vId_(std::move(vId)),
+        edgeType_(edgeType) {}
+
+ private:
+  GraphSpaceID spaceId_{-1};
+  Value vId_;
+  EdgeType edgeType_{-1};
+};
+
+class GetIndegree final : public SingleDependencyNode {
+ public:
+  static GetIndegree* make(
+      QueryContext* qctx, PlanNode* input, GraphSpaceID spaceId, Value vid, EdgeType edgeType) {
+    return qctx->objPool()->add(new GetIndegree(qctx, input, spaceId, std::move(vid), edgeType));
+  }
+
+  const Value& getVId() const { return vId_; }
+
+  int64_t getEdgeType() const { return edgeType_; }
+
+  GraphSpaceID getSpaceId() const { return spaceId_; }
+
+ private:
+  GetIndegree(
+      QueryContext* qctx, PlanNode* input, GraphSpaceID spaceId, Value vId, EdgeType edgeType)
+      : SingleDependencyNode(qctx, Kind::kGetIndegree, input),
+        spaceId_(spaceId),
+        vId_(std::move(vId)),
+        edgeType_(edgeType) {}
+
+ private:
+  GraphSpaceID spaceId_{-1};
+  Value vId_;
+  EdgeType edgeType_{-1};
+};
+
 }  // namespace graph
 }  // namespace nebula
 #endif  // GRAPH_PLANNER_PLAN_QUERY_H_

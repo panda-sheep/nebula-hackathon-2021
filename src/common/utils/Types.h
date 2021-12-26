@@ -19,6 +19,8 @@ enum class NebulaKeyType : uint32_t {
   kOperation = 0x00000005,
   kKeyValue = 0x00000006,
   kVertex = 0x00000007,
+  kVertexRef = 0x00000008,
+  kEdgeRef = 0x00000009,
 };
 
 enum class NebulaSystemKeyType : uint32_t {
@@ -47,6 +49,9 @@ static constexpr int32_t kTagLen = sizeof(PartitionID) + sizeof(TagID);
 // size of tag key except srcId and dstId
 static constexpr int32_t kEdgeLen =
     sizeof(PartitionID) + sizeof(EdgeType) + sizeof(EdgeRanking) + sizeof(EdgeVerPlaceHolder);
+
+// size of tag key except srcId and dstId
+static constexpr int32_t kEdgeRefLen = sizeof(PartitionID) + sizeof(EdgeType);
 
 static constexpr int32_t kSystemLen = sizeof(PartitionID) + sizeof(NebulaSystemKeyType);
 
